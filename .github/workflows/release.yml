@@ -15,8 +15,6 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        ref: ${{ github.event.inputs.version }}
     
     - name: Validate version format
       run: |
@@ -26,6 +24,16 @@ jobs:
           exit 1
         fi
     
+    - name: Configure Git user
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+
+    - name: Create tag
+      run: |
+        git tag ${{ github.event.inputs.version }}
+        git push origin ${{ github.event.inputs.version }}
+
     - name: Display release information
       run: |
         echo "Starting release process for version ${{ github.event.inputs.version }}"
