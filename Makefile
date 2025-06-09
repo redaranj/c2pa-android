@@ -107,28 +107,18 @@ android-dev: setup
 # Run Gradle tasks
 android-gradle: android-lib
 	@echo "Running Gradle build commands..."
-	@# Use environment variables if available, otherwise use defaults
-	@if [ -z "$$ANDROID_HOME" ]; then \
-		echo "ANDROID_HOME not set, using default location"; \
-		echo "sdk.dir=$$HOME/Library/Android/sdk" > $(ANDROID_LIB_PATH)/local.properties; \
-	else \
-		echo "Using ANDROID_HOME from environment"; \
-		echo "sdk.dir=$$ANDROID_HOME" > $(ANDROID_LIB_PATH)/local.properties; \
-	fi
-	@# Check for JAVA_HOME environment variable
-	@if [ -z "$$JAVA_HOME" ]; then \
-		echo "JAVA_HOME not set, trying to use brew installation of OpenJDK 17"; \
-		cd $(ANDROID_LIB_PATH) && JAVA_HOME=$$(brew --prefix openjdk@17 2>/dev/null)/libexec/openjdk.jdk/Contents/Home PATH="$$PATH:$$(brew --prefix openjdk@17 2>/dev/null)/bin" ./gradlew clean assembleRelease; \
-	else \
-		echo "Using JAVA_HOME from environment"; \
-		cd $(ANDROID_LIB_PATH) && ./gradlew clean assembleRelease; \
-	fi
+	@echo "Using ANDROID_HOME and JAVA_HOME from environment"
+	@echo "sdk.dir=$$ANDROID_HOME" > $(ANDROID_LIB_PATH)/local.properties
+	@cd $(ANDROID_LIB_PATH) && ./gradlew clean assembleRelease
 	@echo "Gradle build completed. AAR file available at $(ANDROID_LIB_PATH)/c2pa/build/outputs/aar/c2pa-release.aar"
 
 # Publish targets
 publish-android: android-lib
 	@echo "Publishing Android library to GitHub packages..."
-	# Commands for publishing to GitHub packages will be added later
+	@echo "Using ANDROID_HOME and JAVA_HOME from environment"
+	@echo "sdk.dir=$$ANDROID_HOME" > $(ANDROID_LIB_PATH)/local.properties
+	@cd $(ANDROID_LIB_PATH) && ./gradlew clean assembleRelease publish
+	@echo "Android library published to GitHub packages at https://maven.pkg.github.com/$(GITHUB_ORG)/c2pa-android"
 
 # Clean target
 clean:
