@@ -262,28 +262,15 @@ JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PAReader_resourceToStre
     return (jlong)result;
 }
 
-// Builder native methods
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PABuilder_fromJson(JNIEnv *env, jclass clazz, jstring manifestJson) {
+// Builder native methods - using the correct Companion method names
+JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PABuilder_nativeFromJson(JNIEnv *env, jclass clazz, jstring manifestJson) {
     const char *cmanifestJson = jstring_to_cstring(env, manifestJson);
     struct C2paBuilder *builder = c2pa_builder_from_json(cmanifestJson);
     release_cstring(env, manifestJson, cmanifestJson);
     return (jlong)builder;
 }
 
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PABuilder_fromArchive(JNIEnv *env, jclass clazz, jlong streamPtr) {
-    struct C2paStream *stream = (struct C2paStream*)streamPtr;
-    return (jlong)c2pa_builder_from_archive(stream);
-}
-
-// Companion object methods
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PABuilder_00024Companion_nativeFromJson(JNIEnv *env, jobject obj, jstring manifestJson) {
-    const char *cmanifestJson = jstring_to_cstring(env, manifestJson);
-    struct C2paBuilder *builder = c2pa_builder_from_json(cmanifestJson);
-    release_cstring(env, manifestJson, cmanifestJson);
-    return (jlong)builder;
-}
-
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PABuilder_00024Companion_nativeFromArchive(JNIEnv *env, jobject obj, jlong streamPtr) {
+JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PABuilder_nativeFromArchive(JNIEnv *env, jclass clazz, jlong streamPtr) {
     struct C2paStream *stream = (struct C2paStream*)streamPtr;
     return (jlong)c2pa_builder_from_archive(stream);
 }
@@ -347,7 +334,7 @@ JNIEXPORT jobject JNICALL Java_info_guardianproject_c2pa_C2PABuilder_sign(JNIEnv
     release_cstring(env, format, cformat);
     
     // Create result object
-    jclass resultClass = (*env)->FindClass(env, "com/adobe/c2pa/C2PABuilder$SignResult");
+    jclass resultClass = (*env)->FindClass(env, "info/guardianproject/c2pa/C2PABuilder$SignResult");
     jmethodID constructor = (*env)->GetMethodID(env, resultClass, "<init>", "(J[B)V");
     
     jbyteArray jmanifestBytes = NULL;
@@ -360,8 +347,11 @@ JNIEXPORT jobject JNICALL Java_info_guardianproject_c2pa_C2PABuilder_sign(JNIEnv
     return (*env)->NewObject(env, resultClass, constructor, (jlong)size, jmanifestBytes);
 }
 
+// Note: Callback signer functionality is complex and not implemented yet
+// We'll focus on basic signer functionality first
+
 // Signer native methods
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PASigner_fromInfo(JNIEnv *env, jclass clazz, jobject signerInfo) {
+JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PASigner_nativeFromInfo(JNIEnv *env, jclass clazz, jobject signerInfo) {
     // Get SignerInfo fields
     jclass signerInfoClass = (*env)->GetObjectClass(env, signerInfo);
     jfieldID algField = (*env)->GetFieldID(env, signerInfoClass, "alg", "Ljava/lang/String;");
@@ -396,7 +386,13 @@ JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PASigner_fromInfo(JNIEn
     return (jlong)signer;
 }
 
-// Companion object method for C2PASigner
+JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PASigner_nativeFromCallback(JNIEnv *env, jclass clazz, jstring algorithm, jstring certificateChain, jstring tsaURL, jobject callback) {
+    // TODO: Implement callback signer - this requires complex callback handling
+    // For now, return 0 to indicate failure
+    return 0;
+}
+
+// Legacy companion object method for C2PASigner (deprecated)
 JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PASigner_00024Companion_nativeFromInfo(JNIEnv *env, jobject obj, jobject signerInfo) {
     // Get SignerInfo fields
     jclass signerInfoClass = (*env)->GetObjectClass(env, signerInfo);

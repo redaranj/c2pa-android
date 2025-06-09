@@ -369,6 +369,13 @@ class C2PABuilder private constructor(private var nativeHandle: Long) : Closeabl
 }
 
 /**
+ * Callback interface for custom signing operations
+ */
+interface SignCallback {
+    fun sign(data: ByteArray): ByteArray?
+}
+
+/**
  * C2PA Signer for signing manifests
  */
 class C2PASigner private constructor(private var nativeHandle: Long) : Closeable {
@@ -385,8 +392,35 @@ class C2PASigner private constructor(private var nativeHandle: Long) : Closeable
             return if (handle != 0L) C2PASigner(handle) else null
         }
 
+        /**
+         * Create a signer with a custom signing callback
+         * @param algorithm Signing algorithm
+         * @param certificateChain Certificate chain in PEM format
+         * @param tsaURL Optional timestamp authority URL
+         * @param callback Signing callback
+         * @return Signer instance or null on error
+         */
+        @JvmStatic
+        fun fromCallback(
+            algorithm: String,
+            certificateChain: String,
+            tsaURL: String? = null,
+            callback: SignCallback
+        ): C2PASigner? {
+            val handle = nativeFromCallback(algorithm, certificateChain, tsaURL, callback)
+            return if (handle != 0L) C2PASigner(handle) else null
+        }
+
         @JvmStatic
         private external fun nativeFromInfo(signerInfo: SignerInfo): Long
+
+        @JvmStatic
+        private external fun nativeFromCallback(
+            algorithm: String,
+            certificateChain: String,
+            tsaURL: String?,
+            callback: SignCallback
+        ): Long
     }
 
     /**
@@ -409,6 +443,55 @@ class C2PASigner private constructor(private var nativeHandle: Long) : Closeable
 
     private external fun reserveSize(handle: Long): Long
     private external fun free(handle: Long)
+}
+
+/**
+ * Memory-based C2PA stream implementation
+ */
+open class MemoryC2PAStream(initialData: ByteArray = ByteArray(0)) : C2PAStream() {
+    private var data = initialData.copyOf()
+    private var position = 0L
+    
+    fun getData(): ByteArray = data.copyOf()
+    
+    override fun read(buffer: ByteArray, length: Long): Long {
+        val bytesToRead = minOf(length.toInt(), (data.size - position).toInt(), buffer.size)
+        if (bytesToRead <= 0) return 0L
+        
+        System.arraycopy(data, position.toInt(), buffer, 0, bytesToRead)
+        position += bytesToRead
+        return bytesToRead.toLong()
+    }
+
+    override fun seek(offset: Long, mode: Int): Long {
+        position = when (mode) {
+            SeekMode.START.value -> offset
+            SeekMode.CURRENT.value -> position + offset
+            SeekMode.END.value -> data.size + offset
+            else -> return -1L
+        }
+        
+        if (position < 0) position = 0
+        if (position > data.size) position = data.size.toLong()
+        
+        return position
+    }
+
+    override fun write(writeData: ByteArray, length: Long): Long {
+        val bytesToWrite = minOf(length.toInt(), writeData.size)
+        val newSize = maxOf(data.size, (position + bytesToWrite).toInt())
+        
+        if (newSize > data.size) {
+            data = data.copyOf(newSize)
+        }
+        
+        System.arraycopy(writeData, 0, data, position.toInt(), bytesToWrite)
+        position += bytesToWrite
+        
+        return bytesToWrite.toLong()
+    }
+
+    override fun flush(): Long = 0L
 }
 
 /**
@@ -455,6 +538,54 @@ class FileC2PAStream(private val file: java.io.RandomAccessFile) : C2PAStream() 
         } catch (e: Exception) {
             -1L
         }
+    }
+}
+
+/**
+ * Stream utilities for creating different types of streams
+ */
+object StreamUtils {
+    
+    /**
+     * Create a stream from Android raw resource
+     */
+    fun fromRawResource(context: android.content.Context, resourceId: Int): MemoryC2PAStream {
+        val inputStream = context.resources.openRawResource(resourceId)
+        val data = inputStream.readBytes()
+        inputStream.close()
+        return MemoryC2PAStream(data)
+    }
+    
+    /**
+     * Create a stream from asset
+     */
+    fun fromAsset(context: android.content.Context, assetPath: String): MemoryC2PAStream {
+        val inputStream = context.assets.open(assetPath)
+        val data = inputStream.readBytes()
+        inputStream.close()
+        return MemoryC2PAStream(data)
+    }
+    
+    /**
+     * Create a stream from file path
+     */
+    fun fromFile(filePath: String, mode: String = "r"): FileC2PAStream {
+        return FileC2PAStream(java.io.RandomAccessFile(filePath, mode))
+    }
+    
+    /**
+     * Create a stream from byte array
+     */
+    fun fromByteArray(data: ByteArray): MemoryC2PAStream {
+        return MemoryC2PAStream(data)
+    }
+    
+    /**
+     * Create a temporary file stream
+     */
+    fun createTempFile(context: android.content.Context, prefix: String, suffix: String): FileC2PAStream {
+        val tempFile = java.io.File.createTempFile(prefix, suffix, context.cacheDir)
+        return FileC2PAStream(java.io.RandomAccessFile(tempFile, "rw"))
     }
 }
 
