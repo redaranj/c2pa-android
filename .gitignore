@@ -1,0 +1,44 @@
+# Gradle
+.gradle/
+build/
+*/build/
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+
+# Android Studio
+*.iml
+.idea/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Android specific
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+release/
+output/
+
+# Native libraries
+*.so
+*.jnilib
+libs/
+
+# Generated files
+*.aar
+
+# OS files
+.DS_Store
+
+# Editor temporary files
+*~
+*.swp
+*.swo
+

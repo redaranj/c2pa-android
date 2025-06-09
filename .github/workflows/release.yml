@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for the release (e.g. v1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Validate version format
+      run: |
+        # Simple validation for version format
+        if [[ ! "${{ github.event.inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Version must be in format vX.Y.Z (e.g., v1.0.0)"
+          exit 1
+        fi
+    
+    - name: Configure Git user
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+
+    - name: Create tag
+      run: |
+        git tag ${{ github.event.inputs.version }}
+        git push origin ${{ github.event.inputs.version }}
+
+    - name: Display release information
+      run: |
+        echo "Starting release process for version ${{ github.event.inputs.version }}"
+        echo "This workflow will:"
+        echo "1. Download pre-built Android libraries"
+        echo "2. Build the Android AAR"
+        echo "3. Create a GitHub release with artifacts"
+
+    - name: Set up JDK 17
+      id: setup-java
+      uses: actions/setup-java@v3
+      with:
+        java-version: "17"
+        distribution: "temurin"
+
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Set environment variables
+      run: |
+        echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+
+    - name: Build Android AAR
+      env:
+        JAVA_HOME: ${{ steps.setup-java.outputs.path }}
+      run: |
+        make android
+
+    - name: List AAR artifacts
+      run: |
+        echo "Built AAR files:"
+        find output/lib/c2pa/build/outputs/aar -name "*.aar" -type f
+
+    - name: Publish to GitHub Packages
+      env:
+        JAVA_HOME: ${{ steps.setup-java.outputs.path }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CI_COMMIT_TAG: ${{ github.event.inputs.version }}
+      run: |
+        make publish
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.event.inputs.version }}
+        name: C2PA Android ${{ github.event.inputs.version }}
+        files: |
+          output/lib/c2pa/build/outputs/aar/*.aar
+        body: |
+          # C2PA Android Release ${{ github.event.inputs.version }}
+
+          ## Android Integration
+
+          ### Gradle dependency
+
+          Add the AAR library to your Android project:
+
+          1. Download the AAR file from this release
+          2. Place it in your app's `libs` directory
+          3. Add to your `build.gradle`:
+
+          ```gradle
+          dependencies {
+              implementation files('libs/c2pa-release.aar')
+          }
+          ```
+
+          ### Usage
+
+          See the [README.md](https://github.com/${{ github.repository }}) for detailed integration instructions and API documentation.
+
+          ## What's Changed
+
+          See the [commit history](https://github.com/${{ github.repository }}/compare/{{ previousTag }}...${{ github.event.inputs.version }}) for a full list of changes.
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
