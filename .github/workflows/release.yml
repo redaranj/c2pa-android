@@ -67,6 +67,13 @@ jobs:
         echo "Built AAR files:"
         find output/lib/c2pa/build/outputs/aar -name "*.aar" -type f
 
+    - name: Publish to GitHub Packages
+      env:
+        JAVA_HOME: ${{ steps.setup-java.outputs.path }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        make publish
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:

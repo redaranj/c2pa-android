@@ -113,11 +113,11 @@ android-gradle: android-lib
 	@echo "Gradle build completed. AAR file available at $(ANDROID_LIB_PATH)/c2pa/build/outputs/aar/c2pa-release.aar"
 
 # Publish targets
-publish-android: android-lib
+publish:
 	@echo "Publishing Android library to GitHub packages..."
 	@echo "Using ANDROID_HOME and JAVA_HOME from environment"
 	@echo "sdk.dir=$$ANDROID_HOME" > $(ANDROID_LIB_PATH)/local.properties
-	@cd $(ANDROID_LIB_PATH) && ./gradlew clean assembleRelease publish
+	@cd $(ANDROID_LIB_PATH) && ./gradlew publish
 	@echo "Android library published to GitHub packages at https://maven.pkg.github.com/$(GITHUB_ORG)/c2pa-android"
 
 # Clean target
@@ -137,7 +137,7 @@ help:
 	@echo "  android-dev           - Download x86_64 library only for emulator (faster development)"
 	@echo "  android-lib           - Package Android library"
 	@echo "  android-gradle        - Run Gradle build to generate AAR file"
-	@echo "  publish-android       - Publish Android library to GitHub packages"
+	@echo "  publish               - Publish Android library to GitHub packages"
 	@echo "  all                   - Complete Android build (default, same as android)"
 	@echo "  clean                 - Remove build artifacts"
 	@echo "  help                  - Show this help message"
