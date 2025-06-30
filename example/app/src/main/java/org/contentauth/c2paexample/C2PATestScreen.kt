@@ -480,10 +480,44 @@ suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispat
     
     // Test 14: Reader with Manifest Data
     results.add(runTest("Reader with Manifest Data") {
-        val manifestData = ByteArray(1024) { it.toByte() }
+
+        var manifestData = ByteArray(1024) { it.toByte() }
         val imageData = getResourceAsBytes(context, R.raw.pexels_asadphoto_457882)
         val stream = MemoryC2PAStream(imageData)
+
         try {
+
+            val manifestJson = """{
+            "claim_generator": "test_app/1.0",
+            "assertions": [
+                {"label": "c2pa.test", "data": {"test": true}}
+            ]
+                 }"""
+
+            val builder = C2PABuilder.fromJson(manifestJson)
+            if (builder != null) {
+
+                val sourceImageData = getResourceAsBytes(context, R.raw.pexels_asadphoto_457882)
+                val sourceStream = MemoryC2PAStream(sourceImageData)
+
+                val fileTest = File.createTempFile("c2pa-test", ".jpg")
+                val destStream = FileC2PAStream(RandomAccessFile(fileTest, "rw"))
+
+                val certPem = getResourceAsString(context, R.raw.es256_certs)
+                val keyPem = getResourceAsString(context, R.raw.es256_private)
+
+                val signerInfo = SignerInfo("es256", certPem, keyPem)
+                val signer = C2PASigner.fromInfo(signerInfo)
+
+                if (signer != null) {
+
+                    val result =
+                        builder.sign("image/jpeg", sourceStream, destStream, signer)
+
+                    manifestData = result.manifestBytes!!
+                }
+            }
+
             val reader = C2PAReader.fromManifestDataAndStream("image/jpeg", stream, manifestData)
             val success = reader != null
             reader?.close()
