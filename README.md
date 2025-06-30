@@ -43,7 +43,7 @@ You can add C2PA Android as a Gradle dependency:
 
 ```gradle
 dependencies {
-    implementation "info.guardianproject:c2pa:1.0.0"
+    implementation "org.contentauth:c2pa:1.0.0"
 }
 ```
 
@@ -90,7 +90,7 @@ dependencies {
 ### Android Example
 
 ```kotlin
-import info.guardianproject.c2pa.C2PA
+import org.contentauth.c2pa.C2PA
 
 // Initialize C2PA
 val c2pa = C2PA()
