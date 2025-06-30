@@ -1,9 +1,9 @@
-package info.guardianproject.c2paexample
+package org.contentauth.c2paexample
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import info.guardianproject.c2pa.*
+import org.contentauth.c2pa.*
 import org.json.JSONObject
 import org.junit.Test
 import org.junit.runner.RunWith

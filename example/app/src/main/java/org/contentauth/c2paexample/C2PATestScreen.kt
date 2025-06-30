@@ -1,4 +1,4 @@
-package info.guardianproject.c2paexample
+package org.contentauth.c2paexample
 
 import android.content.Context
 import androidx.compose.foundation.layout.*
@@ -11,7 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import info.guardianproject.c2pa.*
+import org.contentauth.c2pa.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
