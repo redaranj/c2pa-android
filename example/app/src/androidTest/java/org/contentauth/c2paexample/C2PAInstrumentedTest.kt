@@ -103,14 +103,14 @@ class C2PAInstrumentedTest {
                     signCert = certPem,
                     privateKey = keyPem
                 )
-                
+
                 val signer = C2PASigner.fromInfo(signerInfo)
                 assertNotNull("Should create signer", signer)
                 
                 try {
                     val result = builder!!.sign("image/jpeg", sourceStream, destStream, signer!!)
                     assertTrue("Signed image should be larger than 0", result.size > 0)
-                    assertTrue("Signed image should be larger than original", result.size > sourceImageData.size)
+                    assertTrue("Signed image should be larger than original", destStream.getData().size > sourceImageData.size)
                 } finally {
                     signer?.close()
                 }
