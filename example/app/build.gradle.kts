@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "org.contentauth.c2paexample"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "org.contentauth.c2paexample"
-        minSdk = 31
-        targetSdk = 35
+        minSdk = 28
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
