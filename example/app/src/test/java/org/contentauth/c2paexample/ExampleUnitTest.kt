@@ -1,4 +1,4 @@
-package info.guardianproject.c2paexample
+package org.contentauth.c2paexample
 
 import org.junit.Test
 

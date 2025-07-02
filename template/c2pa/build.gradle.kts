@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "info.guardianproject.c2pa"
+    namespace = "org.contentauth.c2pa"
     compileSdk = 35
 
     defaultConfig {
@@ -79,7 +79,7 @@ publishing {
   publications {
     create<MavenPublication>("release") {
       artifact("$buildDir/outputs/aar/${project.name}-release.aar")
-      groupId = "info.guardianproject"
+      groupId = "org.contentauth"
       artifactId = "c2pa"
       version = System.getenv("CI_COMMIT_TAG") as String?
     }

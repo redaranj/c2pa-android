@@ -72,21 +72,21 @@ static intptr_t java_flush_callback(struct StreamContext *context) {
 
 // Native methods implementation
 
-JNIEXPORT jstring JNICALL Java_info_guardianproject_c2pa_C2PA_version(JNIEnv *env, jclass clazz) {
+JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_version(JNIEnv *env, jclass clazz) {
     char *version = c2pa_version();
     jstring result = cstring_to_jstring(env, version);
     c2pa_string_free(version);
     return result;
 }
 
-JNIEXPORT jstring JNICALL Java_info_guardianproject_c2pa_C2PA_getError(JNIEnv *env, jclass clazz) {
+JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_getError(JNIEnv *env, jclass clazz) {
     char *error = c2pa_error();
     jstring result = cstring_to_jstring(env, error);
     c2pa_string_free(error);
     return result;
 }
 
-JNIEXPORT jint JNICALL Java_info_guardianproject_c2pa_C2PA_loadSettings(JNIEnv *env, jclass clazz, jstring settings, jstring format) {
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2PA_loadSettings(JNIEnv *env, jclass clazz, jstring settings, jstring format) {
     const char *csettings = jstring_to_cstring(env, settings);
     const char *cformat = jstring_to_cstring(env, format);
     
@@ -98,7 +98,7 @@ JNIEXPORT jint JNICALL Java_info_guardianproject_c2pa_C2PA_loadSettings(JNIEnv *
     return result;
 }
 
-JNIEXPORT jstring JNICALL Java_info_guardianproject_c2pa_C2PA_readFile(JNIEnv *env, jclass clazz, jstring path, jstring dataDir) {
+JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_readFile(JNIEnv *env, jclass clazz, jstring path, jstring dataDir) {
     const char *cpath = jstring_to_cstring(env, path);
     const char *cdataDir = jstring_to_cstring(env, dataDir);
     
@@ -112,7 +112,7 @@ JNIEXPORT jstring JNICALL Java_info_guardianproject_c2pa_C2PA_readFile(JNIEnv *e
     return jresult;
 }
 
-JNIEXPORT jstring JNICALL Java_info_guardianproject_c2pa_C2PA_readIngredientFile(JNIEnv *env, jclass clazz, jstring path, jstring dataDir) {
+JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_readIngredientFile(JNIEnv *env, jclass clazz, jstring path, jstring dataDir) {
     const char *cpath = jstring_to_cstring(env, path);
     const char *cdataDir = jstring_to_cstring(env, dataDir);
     
@@ -126,7 +126,7 @@ JNIEXPORT jstring JNICALL Java_info_guardianproject_c2pa_C2PA_readIngredientFile
     return jresult;
 }
 
-JNIEXPORT jstring JNICALL Java_info_guardianproject_c2pa_C2PA_signFile(JNIEnv *env, jclass clazz, jstring sourcePath, jstring destPath, jstring manifest, jobject signerInfo, jstring dataDir) {
+JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_signFile(JNIEnv *env, jclass clazz, jstring sourcePath, jstring destPath, jstring manifest, jobject signerInfo, jstring dataDir) {
     const char *csourcePath = jstring_to_cstring(env, sourcePath);
     const char *cdestPath = jstring_to_cstring(env, destPath);
     const char *cmanifest = jstring_to_cstring(env, manifest);
@@ -173,7 +173,7 @@ JNIEXPORT jstring JNICALL Java_info_guardianproject_c2pa_C2PA_signFile(JNIEnv *e
 }
 
 // Stream native methods
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PAStream_createNativeStream(JNIEnv *env, jobject obj) {
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PAStream_createNativeStream(JNIEnv *env, jobject obj) {
     JavaStreamContext *ctx = (JavaStreamContext*)malloc(sizeof(JavaStreamContext));
     ctx->env = env;
     ctx->streamObject = (*env)->NewGlobalRef(env, obj);
@@ -195,7 +195,7 @@ JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PAStream_createNativeSt
     return (jlong)stream;
 }
 
-JNIEXPORT void JNICALL Java_info_guardianproject_c2pa_C2PAStream_releaseNativeStream(JNIEnv *env, jobject obj, jlong streamPtr) {
+JNIEXPORT void JNICALL Java_org_contentauth_c2pa_C2PAStream_releaseNativeStream(JNIEnv *env, jobject obj, jlong streamPtr) {
     if (streamPtr != 0) {
         struct C2paStream *stream = (struct C2paStream*)streamPtr;
         // Free the Java context
@@ -208,7 +208,7 @@ JNIEXPORT void JNICALL Java_info_guardianproject_c2pa_C2PAStream_releaseNativeSt
 }
 
 // Reader native methods
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PAReader_fromStream(JNIEnv *env, jclass clazz, jstring format, jlong streamPtr) {
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PAReader_fromStream(JNIEnv *env, jclass clazz, jstring format, jlong streamPtr) {
     const char *cformat = jstring_to_cstring(env, format);
     struct C2paStream *stream = (struct C2paStream*)streamPtr;
     
@@ -219,7 +219,7 @@ JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PAReader_fromStream(JNI
     return (jlong)reader;
 }
 
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PAReader_fromManifestDataAndStream(JNIEnv *env, jclass clazz, jstring format, jlong streamPtr, jbyteArray manifestData) {
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PAReader_fromManifestDataAndStream(JNIEnv *env, jclass clazz, jstring format, jlong streamPtr, jbyteArray manifestData) {
     const char *cformat = jstring_to_cstring(env, format);
     struct C2paStream *stream = (struct C2paStream*)streamPtr;
     
@@ -236,13 +236,13 @@ JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PAReader_fromManifestDa
     return (jlong)reader;
 }
 
-JNIEXPORT void JNICALL Java_info_guardianproject_c2pa_C2PAReader_free(JNIEnv *env, jobject obj, jlong readerPtr) {
+JNIEXPORT void JNICALL Java_org_contentauth_c2pa_C2PAReader_free(JNIEnv *env, jobject obj, jlong readerPtr) {
     if (readerPtr != 0) {
         c2pa_reader_free((struct C2paReader*)readerPtr);
     }
 }
 
-JNIEXPORT jstring JNICALL Java_info_guardianproject_c2pa_C2PAReader_toJson(JNIEnv *env, jobject obj, jlong readerPtr) {
+JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PAReader_toJson(JNIEnv *env, jobject obj, jlong readerPtr) {
     struct C2paReader *reader = (struct C2paReader*)readerPtr;
     char *json = c2pa_reader_json(reader);
     jstring result = cstring_to_jstring(env, json);
@@ -250,7 +250,7 @@ JNIEXPORT jstring JNICALL Java_info_guardianproject_c2pa_C2PAReader_toJson(JNIEn
     return result;
 }
 
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PAReader_resourceToStream(JNIEnv *env, jobject obj, jlong readerPtr, jstring uri, jlong streamPtr) {
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PAReader_resourceToStream(JNIEnv *env, jobject obj, jlong readerPtr, jstring uri, jlong streamPtr) {
     struct C2paReader *reader = (struct C2paReader*)readerPtr;
     const char *curi = jstring_to_cstring(env, uri);
     struct C2paStream *stream = (struct C2paStream*)streamPtr;
@@ -263,36 +263,36 @@ JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PAReader_resourceToStre
 }
 
 // Builder native methods - using the correct Companion method names
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PABuilder_nativeFromJson(JNIEnv *env, jclass clazz, jstring manifestJson) {
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PABuilder_nativeFromJson(JNIEnv *env, jclass clazz, jstring manifestJson) {
     const char *cmanifestJson = jstring_to_cstring(env, manifestJson);
     struct C2paBuilder *builder = c2pa_builder_from_json(cmanifestJson);
     release_cstring(env, manifestJson, cmanifestJson);
     return (jlong)builder;
 }
 
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PABuilder_nativeFromArchive(JNIEnv *env, jclass clazz, jlong streamPtr) {
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PABuilder_nativeFromArchive(JNIEnv *env, jclass clazz, jlong streamPtr) {
     struct C2paStream *stream = (struct C2paStream*)streamPtr;
     return (jlong)c2pa_builder_from_archive(stream);
 }
 
-JNIEXPORT void JNICALL Java_info_guardianproject_c2pa_C2PABuilder_free(JNIEnv *env, jobject obj, jlong builderPtr) {
+JNIEXPORT void JNICALL Java_org_contentauth_c2pa_C2PABuilder_free(JNIEnv *env, jobject obj, jlong builderPtr) {
     if (builderPtr != 0) {
         c2pa_builder_free((struct C2paBuilder*)builderPtr);
     }
 }
 
-JNIEXPORT void JNICALL Java_info_guardianproject_c2pa_C2PABuilder_setNoEmbed(JNIEnv *env, jobject obj, jlong builderPtr) {
+JNIEXPORT void JNICALL Java_org_contentauth_c2pa_C2PABuilder_setNoEmbed(JNIEnv *env, jobject obj, jlong builderPtr) {
     c2pa_builder_set_no_embed((struct C2paBuilder*)builderPtr);
 }
 
-JNIEXPORT jint JNICALL Java_info_guardianproject_c2pa_C2PABuilder_setRemoteUrl(JNIEnv *env, jobject obj, jlong builderPtr, jstring remoteUrl) {
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2PABuilder_setRemoteUrl(JNIEnv *env, jobject obj, jlong builderPtr, jstring remoteUrl) {
     const char *cremoteUrl = jstring_to_cstring(env, remoteUrl);
     int result = c2pa_builder_set_remote_url((struct C2paBuilder*)builderPtr, cremoteUrl);
     release_cstring(env, remoteUrl, cremoteUrl);
     return result;
 }
 
-JNIEXPORT jint JNICALL Java_info_guardianproject_c2pa_C2PABuilder_addResource(JNIEnv *env, jobject obj, jlong builderPtr, jstring uri, jlong streamPtr) {
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2PABuilder_addResource(JNIEnv *env, jobject obj, jlong builderPtr, jstring uri, jlong streamPtr) {
     const char *curi = jstring_to_cstring(env, uri);
     struct C2paStream *stream = (struct C2paStream*)streamPtr;
     int result = c2pa_builder_add_resource((struct C2paBuilder*)builderPtr, curi, stream);
@@ -300,7 +300,7 @@ JNIEXPORT jint JNICALL Java_info_guardianproject_c2pa_C2PABuilder_addResource(JN
     return result;
 }
 
-JNIEXPORT jint JNICALL Java_info_guardianproject_c2pa_C2PABuilder_addIngredientFromStream(JNIEnv *env, jobject obj, jlong builderPtr, jstring ingredientJson, jstring format, jlong streamPtr) {
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2PABuilder_addIngredientFromStream(JNIEnv *env, jobject obj, jlong builderPtr, jstring ingredientJson, jstring format, jlong streamPtr) {
     const char *cingredientJson = jstring_to_cstring(env, ingredientJson);
     const char *cformat = jstring_to_cstring(env, format);
     struct C2paStream *stream = (struct C2paStream*)streamPtr;
@@ -315,13 +315,13 @@ JNIEXPORT jint JNICALL Java_info_guardianproject_c2pa_C2PABuilder_addIngredientF
     return result;
 }
 
-JNIEXPORT jint JNICALL Java_info_guardianproject_c2pa_C2PABuilder_toArchive(JNIEnv *env, jobject obj, jlong builderPtr, jlong streamPtr) {
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2PABuilder_toArchive(JNIEnv *env, jobject obj, jlong builderPtr, jlong streamPtr) {
     struct C2paBuilder *builder = (struct C2paBuilder*)builderPtr;
     struct C2paStream *stream = (struct C2paStream*)streamPtr;
     return c2pa_builder_to_archive(builder, stream);
 }
 
-JNIEXPORT jobject JNICALL Java_info_guardianproject_c2pa_C2PABuilder_sign(JNIEnv *env, jobject obj, jlong builderPtr, jstring format, jlong sourceStreamPtr, jlong destStreamPtr, jlong signerPtr) {
+JNIEXPORT jobject JNICALL Java_org_contentauth_c2pa_C2PABuilder_sign(JNIEnv *env, jobject obj, jlong builderPtr, jstring format, jlong sourceStreamPtr, jlong destStreamPtr, jlong signerPtr) {
     struct C2paBuilder *builder = (struct C2paBuilder*)builderPtr;
     const char *cformat = jstring_to_cstring(env, format);
     struct C2paStream *source = (struct C2paStream*)sourceStreamPtr;
@@ -334,7 +334,7 @@ JNIEXPORT jobject JNICALL Java_info_guardianproject_c2pa_C2PABuilder_sign(JNIEnv
     release_cstring(env, format, cformat);
     
     // Create result object
-    jclass resultClass = (*env)->FindClass(env, "info/guardianproject/c2pa/C2PABuilder$SignResult");
+    jclass resultClass = (*env)->FindClass(env, "org/contentauth/c2pa/C2PABuilder$SignResult");
     jmethodID constructor = (*env)->GetMethodID(env, resultClass, "<init>", "(J[B)V");
     
     jbyteArray jmanifestBytes = NULL;
@@ -351,7 +351,7 @@ JNIEXPORT jobject JNICALL Java_info_guardianproject_c2pa_C2PABuilder_sign(JNIEnv
 // We'll focus on basic signer functionality first
 
 // Signer native methods
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PASigner_nativeFromInfo(JNIEnv *env, jclass clazz, jobject signerInfo) {
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PASigner_nativeFromInfo(JNIEnv *env, jclass clazz, jobject signerInfo) {
     // Get SignerInfo fields
     jclass signerInfoClass = (*env)->GetObjectClass(env, signerInfo);
     jfieldID algField = (*env)->GetFieldID(env, signerInfoClass, "alg", "Ljava/lang/String;");
@@ -386,14 +386,14 @@ JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PASigner_nativeFromInfo
     return (jlong)signer;
 }
 
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PASigner_nativeFromCallback(JNIEnv *env, jclass clazz, jstring algorithm, jstring certificateChain, jstring tsaURL, jobject callback) {
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PASigner_nativeFromCallback(JNIEnv *env, jclass clazz, jstring algorithm, jstring certificateChain, jstring tsaURL, jobject callback) {
     // TODO: Implement callback signer - this requires complex callback handling
     // For now, return 0 to indicate failure
     return 0;
 }
 
 // Legacy companion object method for C2PASigner (deprecated)
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PASigner_00024Companion_nativeFromInfo(JNIEnv *env, jobject obj, jobject signerInfo) {
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PASigner_00024Companion_nativeFromInfo(JNIEnv *env, jobject obj, jobject signerInfo) {
     // Get SignerInfo fields
     jclass signerInfoClass = (*env)->GetObjectClass(env, signerInfo);
     jfieldID algField = (*env)->GetFieldID(env, signerInfoClass, "alg", "Ljava/lang/String;");
@@ -428,18 +428,18 @@ JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PASigner_00024Companion
     return (jlong)signer;
 }
 
-JNIEXPORT jlong JNICALL Java_info_guardianproject_c2pa_C2PASigner_reserveSize(JNIEnv *env, jobject obj, jlong signerPtr) {
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PASigner_reserveSize(JNIEnv *env, jobject obj, jlong signerPtr) {
     return c2pa_signer_reserve_size((struct C2paSigner*)signerPtr);
 }
 
-JNIEXPORT void JNICALL Java_info_guardianproject_c2pa_C2PASigner_free(JNIEnv *env, jobject obj, jlong signerPtr) {
+JNIEXPORT void JNICALL Java_org_contentauth_c2pa_C2PASigner_free(JNIEnv *env, jobject obj, jlong signerPtr) {
     if (signerPtr != 0) {
         c2pa_signer_free((struct C2paSigner*)signerPtr);
     }
 }
 
 // Ed25519 signing
-JNIEXPORT jbyteArray JNICALL Java_info_guardianproject_c2pa_C2PA_ed25519Sign(JNIEnv *env, jclass clazz, jbyteArray data, jstring privateKey) {
+JNIEXPORT jbyteArray JNICALL Java_org_contentauth_c2pa_C2PA_ed25519Sign(JNIEnv *env, jclass clazz, jbyteArray data, jstring privateKey) {
     jsize dataSize = (*env)->GetArrayLength(env, data);
     jbyte *cdata = (*env)->GetByteArrayElements(env, data, NULL);
     const char *cprivateKey = jstring_to_cstring(env, privateKey);

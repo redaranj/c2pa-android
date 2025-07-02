@@ -1,4 +1,4 @@
-package info.guardianproject.c2pa
+package org.contentauth.c2pa
 
 import java.io.Closeable
 

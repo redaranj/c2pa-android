@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "info.guardianproject.c2paexample"
+    namespace = "org.contentauth.c2paexample"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "info.guardianproject.c2paexample"
+        applicationId = "org.contentauth.c2paexample"
         minSdk = 31
         targetSdk = 35
         versionCode = 1

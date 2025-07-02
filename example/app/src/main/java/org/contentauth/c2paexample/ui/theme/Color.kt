@@ -1,4 +1,4 @@
-package info.guardianproject.c2paexample.ui.theme
+package org.contentauth.c2paexample.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

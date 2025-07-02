@@ -12,7 +12,7 @@ DOWNLOAD_DIR := $(BUILD_DIR)/downloads
 TEMPLATE_DIR := $(ROOT_DIR)/template
 
 # Android targets
-ANDROID_PACKAGE_NAME := info.guardianproject.c2pa
+ANDROID_PACKAGE_NAME := org.contentauth.c2pa
 ANDROID_LIB_PATH := $(OUTPUT_DIR)/lib
 
 # Android architectures
@@ -84,7 +84,7 @@ android-lib:
 		fi; \
 	done
 	cp -r $(ROOT_DIR)/template/* $(OUTPUT_DIR)/lib/
-	cp $(ROOT_DIR)/src/C2PA.kt $(OUTPUT_DIR)/lib/c2pa/src/main/kotlin/info/guardianproject/c2pa/
+	cp $(ROOT_DIR)/src/C2PA.kt $(OUTPUT_DIR)/lib/c2pa/src/main/kotlin/org/contentauth/c2pa/
 	cp $(ROOT_DIR)/src/c2pa_jni.c $(OUTPUT_DIR)/lib/c2pa/src/main/jni/
 	@echo "Android library packaged at $(OUTPUT_DIR)/lib"
 
@@ -100,7 +100,7 @@ android-dev: setup
 	@cp $(DOWNLOAD_DIR)/x86_64/lib/libc2pa_c.so $(TEMPLATE_DIR)/c2pa/src/main/jniLibs/x86_64/
 	@mkdir -p $(OUTPUT_DIR)/lib
 	@cp -r $(ROOT_DIR)/template/* $(OUTPUT_DIR)/lib/
-	@cp $(ROOT_DIR)/src/C2PA.kt $(OUTPUT_DIR)/lib/c2pa/src/main/kotlin/info/guardianproject/c2pa/
+	@cp $(ROOT_DIR)/src/C2PA.kt $(OUTPUT_DIR)/lib/c2pa/src/main/kotlin/org/contentauth/c2pa/
 	@cp $(ROOT_DIR)/src/c2pa_jni.c $(OUTPUT_DIR)/lib/c2pa/src/main/jni/
 	@echo "Android emulator-only library built at $(OUTPUT_DIR)/lib"
 
