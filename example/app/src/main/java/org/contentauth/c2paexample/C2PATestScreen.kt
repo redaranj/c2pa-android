@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.io.RandomAccessFile
 
 data class TestResult(
     val name: String,
@@ -156,7 +157,7 @@ suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispat
             TestResult("Error Handling", false, "Unexpected behavior", "Result: $result, Error: $error")
         }
     })
-    
+
     // Test 3: Read Manifest from Test Image
     results.add(runTest("Read Manifest from Test Image") {
         val testImageFile = copyResourceToFile(context, R.raw.adobe_20220124_ci, "test_adobe.jpg")
@@ -166,8 +167,8 @@ suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispat
                 val json = JSONObject(manifest)
                 val hasManifests = json.has("manifests")
                 TestResult(
-                    "Read Manifest from Test Image", 
-                    hasManifests, 
+                    "Read Manifest from Test Image",
+                    hasManifests,
                     if (hasManifests) "Successfully read manifest" else "No manifests found",
                     manifest.take(500) + if (manifest.length > 500) "..." else ""
                 )
@@ -179,7 +180,7 @@ suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispat
             testImageFile.delete()
         }
     })
-    
+
     // Test 4: Stream API
     results.add(runTest("Stream API") {
         val testImageData = getResourceAsBytes(context, R.raw.adobe_20220124_ci)
@@ -215,8 +216,9 @@ suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispat
             try {
                 val sourceImageData = getResourceAsBytes(context, R.raw.pexels_asadphoto_457882)
                 val sourceStream = MemoryC2PAStream(sourceImageData)
-                val destStream = MemoryC2PAStream()
-                
+
+                val fileTest = File.createTempFile("c2pa-test",".jpg")
+                val destStream = FileC2PAStream(RandomAccessFile(fileTest,"rw"))
                 try {
                     val certPem = getResourceAsString(context, R.raw.es256_certs)
                     val keyPem = getResourceAsString(context, R.raw.es256_private)
@@ -227,12 +229,17 @@ suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispat
                     if (signer != null) {
                         try {
                             val result = builder.sign("image/jpeg", sourceStream, destStream, signer)
-                            val success = result.size > sourceImageData.size
+
+                            val manifest = C2PA.readFile(fileTest.absolutePath)
+                            val json = JSONObject(manifest)
+                            val success = json.has("manifests")
+
+                         //   val success = result.size > sourceImageData.size
                             TestResult(
                                 "Builder API", 
                                 success, 
                                 if (success) "Successfully signed image" else "Signing failed",
-                                "Original: ${sourceImageData.size}, Signed: ${result.size}"
+                                "Original: ${sourceImageData.size}, Signed: ${fileTest.length()}\n\n${json}"
                             )
                         } finally {
                             signer.close()
@@ -473,10 +480,44 @@ suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispat
     
     // Test 14: Reader with Manifest Data
     results.add(runTest("Reader with Manifest Data") {
-        val manifestData = ByteArray(1024) { it.toByte() }
+
+        var manifestData = ByteArray(1024) { it.toByte() }
         val imageData = getResourceAsBytes(context, R.raw.pexels_asadphoto_457882)
         val stream = MemoryC2PAStream(imageData)
+
         try {
+
+            val manifestJson = """{
+            "claim_generator": "test_app/1.0",
+            "assertions": [
+                {"label": "c2pa.test", "data": {"test": true}}
+            ]
+                 }"""
+
+            val builder = C2PABuilder.fromJson(manifestJson)
+            if (builder != null) {
+
+                val sourceImageData = getResourceAsBytes(context, R.raw.pexels_asadphoto_457882)
+                val sourceStream = MemoryC2PAStream(sourceImageData)
+
+                val fileTest = File.createTempFile("c2pa-test", ".jpg")
+                val destStream = FileC2PAStream(RandomAccessFile(fileTest, "rw"))
+
+                val certPem = getResourceAsString(context, R.raw.es256_certs)
+                val keyPem = getResourceAsString(context, R.raw.es256_private)
+
+                val signerInfo = SignerInfo("es256", certPem, keyPem)
+                val signer = C2PASigner.fromInfo(signerInfo)
+
+                if (signer != null) {
+
+                    val result =
+                        builder.sign("image/jpeg", sourceStream, destStream, signer)
+
+                    manifestData = result.manifestBytes!!
+                }
+            }
+
             val reader = C2PAReader.fromManifestDataAndStream("image/jpeg", stream, manifestData)
             val success = reader != null
             reader?.close()

@@ -101,8 +101,8 @@ class C2PAUnitTests {
         assertNotNull("Should create signer", signer)
         
         val result = builder!!.sign("image/jpeg", sourceStream, destStream, signer!!)
-        assertTrue("Signed image should be larger than 0", result.size > 0)
-        assertTrue("Signed image should be larger than original", result.size > sourceImageData.size)
+        assertTrue("Signed image should be larger than 0", destStream.getData().isNotEmpty())
+        assertTrue("Signed image should be larger than original", destStream.getData().size > sourceImageData.size)
         
         signer.close()
         builder.close()
