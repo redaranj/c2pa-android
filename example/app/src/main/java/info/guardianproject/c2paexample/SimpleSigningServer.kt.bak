@@ -1,0 +1,211 @@
+package info.guardianproject.c2paexample
+
+import android.content.Context
+import info.guardianproject.c2pa.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.net.ServerSocket
+import java.net.Socket
+import java.security.KeyFactory
+import java.security.PrivateKey
+import java.security.Signature
+import java.security.spec.PKCS8EncodedKeySpec
+import java.util.Base64
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * A minimal HTTP server for testing web service signers without external dependencies
+ * This matches the iOS SimpleSigningServer functionality
+ */
+class SimpleSigningServer(
+    private val context: Context,
+    private val port: Int = 0
+) {
+    private var serverSocket: ServerSocket? = null
+    private val isRunning = AtomicBoolean(false)
+    private var actualPort: Int = 0
+    
+    /**
+     * Start the server and return the actual port it's listening on
+     */
+    suspend fun start(): Int = withContext(Dispatchers.IO) {
+        serverSocket = ServerSocket(port)
+        actualPort = serverSocket?.localPort ?: 0
+        isRunning.set(true)
+        
+        // Start accepting connections in a separate coroutine
+        kotlinx.coroutines.launch(Dispatchers.IO) {
+            acceptConnections()
+        }
+        
+        actualPort
+    }
+    
+    /**
+     * Stop the server
+     */
+    fun stop() {
+        isRunning.set(false)
+        serverSocket?.close()
+        serverSocket = null
+    }
+    
+    private suspend fun acceptConnections() {
+        while (isRunning.get()) {
+            try {
+                val socket = serverSocket?.accept() ?: break
+                // Handle each connection in a separate coroutine
+                kotlinx.coroutines.launch(Dispatchers.IO) {
+                    handleConnection(socket)
+                }
+            } catch (e: Exception) {
+                if (isRunning.get()) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+    
+    private suspend fun handleConnection(socket: Socket) = withContext(Dispatchers.IO) {
+        try {
+            socket.use { clientSocket ->
+                val reader = BufferedReader(InputStreamReader(clientSocket.getInputStream()))
+                val writer = OutputStreamWriter(clientSocket.getOutputStream())
+                
+                // Read request
+                val request = parseHTTPRequest(reader)
+                
+                if (request != null && request.method == "POST" && request.path == "/sign") {
+                    // Process signing request
+                    try {
+                        val signature = signData(request.body)
+                        val response = buildResponse(200, "OK", signature, "application/octet-stream")
+                        writer.write(response)
+                        writer.write(String(signature))
+                    } catch (e: Exception) {
+                        val errorMessage = e.message ?: "Internal server error"
+                        val response = buildResponse(500, "Internal Server Error", errorMessage.toByteArray(), "text/plain")
+                        writer.write(response)
+                        writer.write(errorMessage)
+                    }
+                } else {
+                    // 404 response
+                    val errorMessage = "Endpoint not found"
+                    val response = buildResponse(404, "Not Found", errorMessage.toByteArray(), "text/plain")
+                    writer.write(response)
+                    writer.write(errorMessage)
+                }
+                
+                writer.flush()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    
+    private fun parseHTTPRequest(reader: BufferedReader): HTTPRequest? {
+        try {
+            // Read first line
+            val firstLine = reader.readLine() ?: return null
+            val parts = firstLine.split(" ")
+            if (parts.size < 3) return null
+            
+            val method = parts[0]
+            val path = parts[1]
+            
+            // Read headers
+            var contentLength = 0
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                if (line.isNullOrEmpty()) break
+                
+                if (line!!.lowercase().startsWith("content-length:")) {
+                    contentLength = line!!.substring(15).trim().toInt()
+                }
+            }
+            
+            // Read body
+            val body = if (contentLength > 0) {
+                val buffer = CharArray(contentLength)
+                reader.read(buffer, 0, contentLength)
+                String(buffer).toByteArray()
+            } else {
+                ByteArray(0)
+            }
+            
+            return HTTPRequest(method, path, body)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
+    }
+    
+    private fun signData(data: ByteArray): ByteArray {
+        val privateKey = getPrivateKey()
+        val signature = Signature.getInstance("SHA256withECDSA")
+        signature.initSign(privateKey)
+        signature.update(data)
+        return signature.sign()
+    }
+    
+    private fun getPrivateKey(): PrivateKey {
+        val keyStream = context.resources.openRawResource(R.raw.es256_private)
+        val keyPEM = keyStream.bufferedReader().use { it.readText() }
+        
+        // Remove PEM headers and decode base64
+        val keyBase64 = keyPEM
+            .replace("-----BEGIN EC PRIVATE KEY-----", "")
+            .replace("-----END EC PRIVATE KEY-----", "")
+            .replace("-----BEGIN PRIVATE KEY-----", "")
+            .replace("-----END PRIVATE KEY-----", "")
+            .replace("\n", "")
+            .replace("\r", "")
+            .trim()
+        
+        val keyBytes = android.util.Base64.decode(keyBase64, android.util.Base64.DEFAULT)
+        val keySpec = PKCS8EncodedKeySpec(keyBytes)
+        val keyFactory = KeyFactory.getInstance("EC")
+        return keyFactory.generatePrivate(keySpec)
+    }
+    
+    fun getCertificateChain(): String {
+        val certStream = context.resources.openRawResource(R.raw.es256_certs)
+        return certStream.bufferedReader().use { it.readText() }
+    }
+    
+    private fun buildResponse(
+        statusCode: Int,
+        statusMessage: String,
+        body: ByteArray,
+        contentType: String
+    ): String {
+        return "HTTP/1.1 $statusCode $statusMessage\r\n" +
+                "Content-Type: $contentType\r\n" +
+                "Content-Length: ${body.size}\r\n" +
+                "Connection: close\r\n" +
+                "\r\n"
+    }
+    
+    companion object {
+        /**
+         * Create a test signing server with pre-configured certificates
+         */
+        fun createTestSigningServer(context: Context): Pair<SimpleSigningServer, String> {
+            val server = SimpleSigningServer(context)
+            val certificate = server.getCertificateChain()
+            return Pair(server, certificate)
+        }
+    }
+}
+
+/**
+ * Simple HTTP request data class
+ */
+data class HTTPRequest(
+    val method: String,
+    val path: String,
+    val body: ByteArray
+)

@@ -134,6 +134,13 @@ fun TestResultCard(result: TestResult) {
 }
 
 suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispatchers.IO) {
+    // Use the comprehensive TestEngine
+    val testEngine = TestEngine(context)
+    testEngine.runAllTests()
+}
+
+// Legacy test implementation (kept for reference)
+suspend fun runAllTestsLegacy(context: Context): List<TestResult> = withContext(Dispatchers.IO) {
     val results = mutableListOf<TestResult>()
     
     // Test 1: Library Version
