@@ -853,13 +853,20 @@ fun exportPublicKeyPEM(fromKeychainTag: String): String {
 /**
  * Format utilities (additional Android utilities)
  */
-fun formatEmbeddable(format: String, manifestBytes: ByteArray): ByteArray {
-    val result = formatEmbeddableNative(format, manifestBytes)
-    if (result == null) {
-        throw C2PAError.api(C2PA.getError() ?: "Failed to format embeddable")
+object FormatUtils {
+    /**
+     * Convert a binary c2pa manifest into an embeddable version for the given format
+     */
+    @JvmStatic
+    @Throws(C2PAError::class)
+    fun formatEmbeddable(format: String, manifestBytes: ByteArray): ByteArray {
+        val result = formatEmbeddableNative(format, manifestBytes)
+        if (result == null) {
+            throw C2PAError.api(C2PA.getError() ?: "Failed to format embeddable")
+        }
+        return result
     }
-    return result
-}
 
-@JvmStatic
-private external fun formatEmbeddableNative(format: String, manifestBytes: ByteArray): ByteArray?
+    @JvmStatic
+    private external fun formatEmbeddableNative(format: String, manifestBytes: ByteArray): ByteArray?
+}
