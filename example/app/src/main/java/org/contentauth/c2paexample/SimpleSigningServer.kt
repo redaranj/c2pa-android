@@ -7,6 +7,8 @@ import java.net.Socket
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
+import java.util.concurrent.ConcurrentHashMap
+import java.util.UUID
 
 /**
  * A minimal HTTP server for testing web service signers without external dependencies
@@ -196,16 +198,9 @@ class SimpleSigningServer(
             privateKeyPem: String,
             algorithm: SigningAlgorithm = SigningAlgorithm.es256
         ): Pair<SimpleSigningServer, String> {
-            // Create a server with a signing function that uses Tink
+            // Create a server with a signing function that uses SigningHelper
             val signingFunction: (ByteArray) -> ByteArray = { data ->
-                try {
-                    // Use Tink to sign the data
-                    TinkSignatureHelper.signWithPEMKey(data, privateKeyPem)
-                } catch (e: Exception) {
-                    println("Signing error: ${e.message}")
-                    // Return a mock signature on error for testing
-                    ByteArray(64) { it.toByte() }
-                }
+                SigningHelper.signWithPEMKey(data, privateKeyPem, algorithm.name.uppercase())
             }
             
             val server = SimpleSigningServer(signingFunction)
@@ -216,7 +211,38 @@ class SimpleSigningServer(
 }
 
 /**
+ * Mock signing service for Android testing (avoids socket permissions)
+ */
+class MockSigningService(
+    private val signingFunction: (ByteArray) -> ByteArray
+) {
+    private val requests = ConcurrentHashMap<String, ByteArray>()
+    
+    fun handleRequest(requestId: String, data: ByteArray): ByteArray {
+        // Simulate async processing
+        return signingFunction(data)
+    }
+    
+    companion object {
+        private val activeServices = ConcurrentHashMap<String, MockSigningService>()
+        
+        fun register(url: String, service: MockSigningService) {
+            activeServices[url] = service
+        }
+        
+        fun unregister(url: String) {
+            activeServices.remove(url)
+        }
+        
+        fun getService(url: String): MockSigningService? {
+            return activeServices[url]
+        }
+    }
+}
+
+/**
  * Extension to create a web service signer that communicates with a signing server
+ * On Android, uses MockSigningService for testing to avoid socket permissions
  */
 fun Signer.Companion.webServiceSigner(
     serviceUrl: String,
@@ -225,7 +251,14 @@ fun Signer.Companion.webServiceSigner(
     tsaUrl: String? = null
 ): Signer {
     return Signer(algorithm, certsPem, tsaUrl) { data ->
-        // Make HTTP POST request to the signing service
+        // For testing on Android, check if we have a mock service registered
+        val mockService = MockSigningService.getService(serviceUrl)
+        if (mockService != null) {
+            // Use mock service for testing
+            return@Signer mockService.handleRequest(UUID.randomUUID().toString(), data)
+        }
+        
+        // Make real HTTP POST request to the signing service
         try {
             val url = java.net.URL(serviceUrl)
             val connection = url.openConnection() as java.net.HttpURLConnection
