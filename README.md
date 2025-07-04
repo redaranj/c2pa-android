@@ -35,7 +35,16 @@ C2PA Android offers:
 
 - JDK 17 (for Android builds)
 - Android SDK (for Android builds)
+- Android NDK (any recent version - see note below)
 - Make
+
+#### NDK Version
+
+The project will use your default NDK version. If you need to use a specific NDK version, add it to your `local.properties` file:
+
+```properties
+ndk.version=29.0.13599879
+```
 
 ## Installation
 

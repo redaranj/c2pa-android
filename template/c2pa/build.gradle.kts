@@ -32,7 +32,12 @@ android {
         }
     }
 
-    ndkVersion = "29.0.13599879"
+    // NDK version - can be overridden in local.properties with ndk.version=XX.X.XXXXXXX
+    // If not specified, the default NDK bundled with Android Studio will be used
+    val localNdkVersion = project.findProperty("ndk.version") as String?
+    if (localNdkVersion != null) {
+        ndkVersion = localNdkVersion
+    }
 
     buildTypes {
         release {
