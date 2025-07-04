@@ -46,106 +46,96 @@ val C2PAVersion: String by lazy {
 }
 
 /**
- * Main C2PA class for static operations - matching iOS C2PA enum
+ * Main C2PA object for static operations
+ * 
+ * The native libraries are automatically loaded when this object is first accessed.
+ * No manual initialization is required.
  */
-enum class C2PA {
-    ; // Empty enum to match Swift pattern
-    
-    companion object {
-        init {
-            System.loadLibrary("c2pa_c")
-            System.loadLibrary("c2pa_jni")
-        }
+object C2PA {
+    init {
+        System.loadLibrary("c2pa_c")
+        System.loadLibrary("c2pa_jni")
+    }
 
-        /**
-         * Initialize the C2PA library (call this early in your app)
-         */
-        @JvmStatic
-        fun initialize() {
-            // This method ensures the static initializer runs
-            // Just accessing any method will trigger the init block
-        }
+    /**
+     * Returns the version string of the C2PA library
+     */
+    @JvmStatic
+    external fun version(): String
 
-        /**
-         * Returns the version string of the C2PA library
-         */
-        @JvmStatic
-        external fun version(): String
+    /**
+     * Returns the last error message, if any
+     */
+    @JvmStatic
+    external fun getError(): String?
 
-        /**
-         * Returns the last error message, if any
-         */
-        @JvmStatic
-        external fun getError(): String?
+    /**
+     * Load settings from a string
+     */
+    @JvmStatic
+    external fun loadSettings(settings: String, format: String): Int
 
-        /**
-         * Load settings from a string
-         */
-        @JvmStatic
-        external fun loadSettings(settings: String, format: String): Int
+    /**
+     * Read a manifest store from a file
+     */
+    @JvmStatic
+    external fun readFile(path: String, dataDir: String? = null): String?
 
-        /**
-         * Read a manifest store from a file
-         */
-        @JvmStatic
-        external fun readFile(path: String, dataDir: String? = null): String?
+    /**
+     * Read an ingredient from a file
+     */
+    @JvmStatic
+    external fun readIngredientFile(path: String, dataDir: String? = null): String?
 
-        /**
-         * Read an ingredient from a file
-         */
-        @JvmStatic
-        external fun readIngredientFile(path: String, dataDir: String? = null): String?
+    /**
+     * Sign a file with a manifest
+     */
+    @JvmStatic
+    external fun signFile(
+        sourcePath: String,
+        destPath: String,
+        manifest: String,
+        signerInfo: SignerInfo,
+        dataDir: String? = null
+    ): String?
 
-        /**
-         * Sign a file with a manifest
-         */
-        @JvmStatic
-        external fun signFile(
-            sourcePath: String,
-            destPath: String,
-            manifest: String,
-            signerInfo: SignerInfo,
-            dataDir: String? = null
-        ): String?
+    /**
+     * Sign data using Ed25519
+     */
+    @JvmStatic
+    external fun ed25519Sign(data: ByteArray, privateKey: String): ByteArray?
 
-        /**
-         * Sign data using Ed25519
-         */
-        @JvmStatic
-        external fun ed25519Sign(data: ByteArray, privateKey: String): ByteArray?
+    /**
+     * Read a manifest from a file (convenience method matching iOS)
+     */
+    @JvmStatic
+    @Throws(C2PAError::class)
+    fun read(from: File, resourcesDir: File? = null): String {
+        return readFile(from.absolutePath, resourcesDir?.absolutePath)
+            ?: throw C2PAError.api(getError() ?: "Unknown error")
+    }
 
-        /**
-         * Read a manifest from a file (convenience method matching iOS)
-         */
-        @JvmStatic
-        @Throws(C2PAError::class)
-        fun read(from: File, resourcesDir: File? = null): String {
-            return readFile(from.absolutePath, resourcesDir?.absolutePath)
-                ?: throw C2PAError.api(getError() ?: "Unknown error")
-        }
-
-        /**
-         * Sign a file (convenience method matching iOS)
-         */
-        @JvmStatic
-        @Throws(C2PAError::class)
-        fun sign(
-            source: File,
-            destination: File,
-            manifest: String,
-            signer: SignerInfo,
-            resourcesDir: File? = null
-        ) {
-            val result = signFile(
-                source.absolutePath,
-                destination.absolutePath,
-                manifest,
-                signer,
-                resourcesDir?.absolutePath
-            )
-            if (result == null) {
-                throw C2PAError.api(getError() ?: "Signing failed")
-            }
+    /**
+     * Sign a file (convenience method matching iOS)
+     */
+    @JvmStatic
+    @Throws(C2PAError::class)
+    fun sign(
+        source: File,
+        destination: File,
+        manifest: String,
+        signer: SignerInfo,
+        resourcesDir: File? = null
+    ) {
+        val result = signFile(
+            source.absolutePath,
+            destination.absolutePath,
+            manifest,
+            signer,
+            resourcesDir?.absolutePath
+        )
+        if (result == null) {
+            throw C2PAError.api(getError() ?: "Signing failed")
         }
     }
 }
@@ -253,10 +243,7 @@ abstract class Stream : Closeable {
 class Reader private constructor(private var ptr: Long) : Closeable {
     
     companion object {
-        init {
-            // Ensure libraries are loaded when Reader is accessed
-            C2PA.initialize()
-        }
+        // Libraries are automatically loaded by C2PA object initialization
         
         /**
          * Create a reader from a stream
@@ -341,10 +328,7 @@ class Builder private constructor(private var ptr: Long) : Closeable {
     data class SignResult(val size: Long, val manifestBytes: ByteArray?)
     
     companion object {
-        init {
-            // Ensure libraries are loaded when Builder is accessed
-            C2PA.initialize()
-        }
+        // Libraries are automatically loaded by C2PA object initialization
         
         /**
          * Create a builder from JSON
@@ -520,10 +504,7 @@ class Builder private constructor(private var ptr: Long) : Closeable {
 class Signer private constructor(internal val ptr: Long) : Closeable {
     
     companion object {
-        init {
-            // Ensure libraries are loaded when Signer is accessed
-            C2PA.initialize()
-        }
+        // Libraries are automatically loaded by C2PA object initialization
         
         /**
          * Create signer from certificates and private key (matching iOS convenience init)

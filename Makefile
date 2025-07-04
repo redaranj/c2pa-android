@@ -109,6 +109,7 @@ android-gradle: android-lib
 	@echo "Running Gradle build commands..."
 	@echo "Using ANDROID_HOME and JAVA_HOME from environment"
 	@echo "sdk.dir=$$ANDROID_HOME" > $(ANDROID_LIB_PATH)/local.properties
+	@if [ -n "$$NDK_VERSION" ]; then echo "ndk.version=$$NDK_VERSION" >> $(ANDROID_LIB_PATH)/local.properties; fi
 	@cd $(ANDROID_LIB_PATH) && ./gradlew clean assembleRelease
 	@echo "Gradle build completed. AAR file available at $(ANDROID_LIB_PATH)/c2pa/build/outputs/aar/c2pa-release.aar"
 

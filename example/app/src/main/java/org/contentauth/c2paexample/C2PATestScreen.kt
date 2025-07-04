@@ -139,9 +139,6 @@ fun TestResultCard(result: TestResult) {
 suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispatchers.IO) {
     val results = mutableListOf<TestResult>()
     
-    // Initialize C2PA library first
-    C2PA.initialize()
-    
     // Test 1: Library Version
     results.add(runTest("Library Version") {
         val version = C2PA.version()
