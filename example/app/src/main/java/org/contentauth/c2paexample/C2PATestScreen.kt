@@ -754,48 +754,62 @@ suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispat
                 val certPem = getResourceAsString(context, R.raw.es256_certs)
                 val keyPem = getResourceAsString(context, R.raw.es256_private)
                 
-                var callbackInvoked = false
-                var dataToSign: ByteArray? = null
+                var signCallCount = 0
                 
-                // Create a callback signer that uses the actual private key to sign
+                // Create a callback signer that uses Tink for signing
                 val callbackSigner = Signer(SigningAlgorithm.es256, certPem, null) { data ->
-                    callbackInvoked = true
-                    dataToSign = data
+                    signCallCount++
                     
-                    // Parse the private key and sign the data properly
-                    val privateKeyStr = keyPem
-                        .replace("-----BEGIN EC PRIVATE KEY-----", "")
-                        .replace("-----END EC PRIVATE KEY-----", "")
-                        .replace("\n", "")
-                        .trim()
-                    
-                    val keyBytes = Base64.getDecoder().decode(privateKeyStr)
-                    val keySpec = java.security.spec.PKCS8EncodedKeySpec(keyBytes)
-                    val keyFactory = java.security.KeyFactory.getInstance("EC")
-                    val privateKey = keyFactory.generatePrivate(keySpec)
-                    
-                    // Sign with SHA256withECDSA for es256
-                    val signature = Signature.getInstance("SHA256withECDSA")
-                    signature.initSign(privateKey)
-                    signature.update(data)
-                    signature.sign()
+                    try {
+                        // Use Tink to sign the data with the PEM private key
+                        TinkSignatureHelper.signWithPEMKey(data, keyPem)
+                    } catch (e: Exception) {
+                        throw RuntimeException("Failed to sign data in callback: ${e.message}", e)
+                    }
                 }
                 
                 try {
-                    // Actually sign the image
+                    // Get reserve size first (should be around 10000 for ES256)
+                    val reserveSize = callbackSigner.reserveSize()
+                    
+                    // Sign the image using the callback signer
                     val result = builder.sign("image/jpeg", sourceStream.stream, destStream, callbackSigner)
+                    val signSucceeded = result.size > 0
                     
-                    // Verify the signed image
-                    val manifest = C2PA.readFile(fileTest.absolutePath)
-                    val hasManifest = manifest != null && manifest.contains("\"signature\"")
+                    // Verify the signed image has a valid C2PA manifest
+                    val manifest = if (signSucceeded) {
+                        try {
+                            C2PA.readFile(fileTest.absolutePath)
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } else null
                     
-                    val success = callbackInvoked && hasManifest && result.size > 0
+                    // Check that manifest contains signature information
+                    val signatureVerified = manifest != null && 
+                        manifest.contains("\"signature\"") && 
+                        manifest.contains("\"signed_info\"")
+                    
+                    // Success criteria matching iOS test
+                    val success = signCallCount > 0 && 
+                                 reserveSize > 0 && 
+                                 signSucceeded && 
+                                 signatureVerified
                     
                     TestResult(
                         "Signer with Callback",
                         success,
-                        if (success) "Callback signing successful" else "Callback signing failed",
-                        "Callback invoked: $callbackInvoked, Data signed: ${dataToSign?.size ?: 0} bytes, Result size: ${result.size}, Has manifest: $hasManifest"
+                        if (success) "✓ Callback signer created and used successfully" 
+                        else "✗ Callback signer test failed",
+                        buildString {
+                            append("Callback invoked: ${signCallCount} time(s)\n")
+                            append("Reserve size: $reserveSize bytes\n")
+                            append("Signing succeeded: $signSucceeded\n") 
+                            append("Signature verified: $signatureVerified")
+                            if (manifest != null && manifest.length > 100) {
+                                append("\nManifest size: ${manifest.length} chars")
+                            }
+                        }
                     )
                 } finally {
                     callbackSigner.close()
@@ -807,7 +821,12 @@ suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispat
                 builder.close()
             }
         } catch (e: Exception) {
-            TestResult("Signer with Callback", false, "Failed with exception", e.toString())
+            TestResult(
+                "Signer with Callback", 
+                false, 
+                "✗ Test failed with exception", 
+                "${e.javaClass.simpleName}: ${e.message}\n${e.stackTrace.take(3).joinToString("\n")}"
+            )
         }
     })
     
