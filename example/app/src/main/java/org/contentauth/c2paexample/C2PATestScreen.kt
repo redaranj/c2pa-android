@@ -990,8 +990,8 @@ suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispat
             val certPem = getResourceAsString(context, R.raw.es256_certs)
             val keyPem = getResourceAsString(context, R.raw.es256_private)
             
-            // Start the signing server with real signing capability
-            val signingServer = SimpleSigningServer(SigningAlgorithm.es256, keyPem)
+            // Start the signing server with real signing capability using Tink
+            val (signingServer, _) = SimpleSigningServer.createTestSigningServer(certPem, keyPem)
             val port = signingServer.start()
             val serverUrl = java.net.URL("http://localhost:$port/sign")
             

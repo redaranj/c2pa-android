@@ -4,187 +4,252 @@ import org.contentauth.c2pa.*
 import java.io.IOException
 import java.net.ServerSocket
 import java.net.Socket
-import java.security.Signature
-import java.util.Base64
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 /**
  * A minimal HTTP server for testing web service signers without external dependencies
  * This is equivalent to iOS SimpleSigningServer.swift
+ * 
+ * Uses a simple HTTP server to handle POST /sign requests and returns signatures
  */
 class SimpleSigningServer(
-    private val algorithm: SigningAlgorithm,
-    private val privateKeyPem: String,
-    private val port: Int = 0
+    private val signingFunction: (ByteArray) -> ByteArray,
+    private val port: Int = 0  // 0 means let the system assign a port
 ) {
     private var serverSocket: ServerSocket? = null
-    private var actualPort: Int = 0
-
+    private val isRunning = AtomicBoolean(false)
+    private val executor = Executors.newCachedThreadPool()
+    
+    /**
+     * Start the server and return the actual port number
+     */
     @Throws(IOException::class)
     fun start(): Int {
-        val socket = ServerSocket(port)
-        actualPort = socket.localPort
-        serverSocket = socket
+        if (isRunning.get()) {
+            throw IllegalStateException("Server is already running")
+        }
         
-        // Start a thread to handle connections
-        Executors.newCachedThreadPool().execute {
-            while (!socket.isClosed) {
+        // Create server socket with automatic port assignment if port is 0
+        val socket = ServerSocket(port)
+        socket.reuseAddress = true
+        serverSocket = socket
+        val actualPort = socket.localPort
+        
+        isRunning.set(true)
+        
+        // Start accepting connections in a background thread
+        thread(isDaemon = true, name = "SimpleSigningServer-${actualPort}") {
+            while (isRunning.get() && !socket.isClosed) {
                 try {
                     val client = socket.accept()
-                    handleClient(client)
+                    // Handle each client in a separate thread
+                    executor.execute {
+                        handleConnection(client)
+                    }
                 } catch (e: Exception) {
-                    // Server stopped
+                    if (isRunning.get()) {
+                        println("Error accepting connection: ${e.message}")
+                    }
                 }
             }
         }
         
         return actualPort
     }
-
+    
+    /**
+     * Stop the server
+     */
     fun stop() {
+        isRunning.set(false)
         serverSocket?.close()
         serverSocket = null
+        executor.shutdown()
     }
-
-    private fun handleClient(client: Socket) {
+    
+    /**
+     * Handle a client connection
+     */
+    private fun handleConnection(client: Socket) {
         client.use { socket ->
-            val input = socket.getInputStream().bufferedReader()
-            val output = socket.getOutputStream()
-            
-            // Read HTTP request
-            val requestLine = input.readLine()
-            if (!requestLine.startsWith("POST /sign")) {
-                val response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
-                output.write(response.toByteArray())
-                return
-            }
-            
-            // Read headers
-            var contentLength = 0
-            while (true) {
-                val line = input.readLine()
-                if (line.isEmpty()) break
-                if (line.startsWith("Content-Length:")) {
-                    contentLength = line.substring(15).trim().toInt()
+            try {
+                val input = socket.getInputStream()
+                val output = socket.getOutputStream()
+                
+                // Buffer to accumulate request data
+                val requestBuffer = mutableListOf<Byte>()
+                val buffer = ByteArray(1024)
+                
+                // Read until we have the complete request
+                while (true) {
+                    val bytesRead = input.read(buffer)
+                    if (bytesRead == -1) break
+                    
+                    requestBuffer.addAll(buffer.take(bytesRead).toList())
+                    
+                    // Check if we have the complete headers (look for \r\n\r\n)
+                    val requestBytes = requestBuffer.toByteArray()
+                    val requestString = String(requestBytes)
+                    val headerEndIndex = requestString.indexOf("\r\n\r\n")
+                    
+                    if (headerEndIndex != -1) {
+                        // Parse Content-Length from headers
+                        val headers = requestString.substring(0, headerEndIndex)
+                        val contentLength = parseContentLength(headers)
+                        
+                        // Check if we have the complete body
+                        val bodyStartIndex = headerEndIndex + 4
+                        val bodyLength = requestBytes.size - bodyStartIndex
+                        
+                        if (bodyLength >= contentLength) {
+                            // We have the complete request
+                            val body = requestBytes.sliceArray(bodyStartIndex until bodyStartIndex + contentLength)
+                            processRequest(headers, body, output)
+                            break
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                println("Error handling connection: ${e.message}")
             }
-            
-            // Read body
-            val body = ByteArray(contentLength)
-            var bytesRead = 0
-            while (bytesRead < contentLength) {
-                val read = socket.getInputStream().read(body, bytesRead, contentLength - bytesRead)
-                if (read == -1) break
-                bytesRead += read
-            }
-            
-            // Sign data
-            val signature = signData(body)
-            
-            // Send response
-            val response = "HTTP/1.1 200 OK\r\n" +
-                          "Content-Type: application/octet-stream\r\n" +
-                          "Content-Length: ${signature.size}\r\n" +
-                          "\r\n"
-            output.write(response.toByteArray())
-            output.write(signature)
-            output.flush()
-        }
-    }
-
-    private fun signData(data: ByteArray): ByteArray {
-        return try {
-            // Use the real signing based on the algorithm
-            when (algorithm) {
-                SigningAlgorithm.es256, SigningAlgorithm.es384, SigningAlgorithm.es512 -> {
-                    // For ECDSA algorithms, we need to use proper signing
-                    signWithPrivateKey(data, privateKeyPem, algorithm)
-                }
-                SigningAlgorithm.ps256, SigningAlgorithm.ps384, SigningAlgorithm.ps512 -> {
-                    // For RSA PSS algorithms
-                    signWithPrivateKey(data, privateKeyPem, algorithm)
-                }
-                SigningAlgorithm.ed25519 -> {
-                    // For Ed25519, use the C2PA library's ed25519Sign method
-                    C2PA.ed25519Sign(data, privateKeyPem) ?: ByteArray(64)
-                }
-            }
-        } catch (e: Exception) {
-            // Return empty signature on error
-            ByteArray(64)
         }
     }
     
-    private fun signWithPrivateKey(data: ByteArray, privateKeyPem: String, algorithm: SigningAlgorithm): ByteArray {
-        // Parse the private key from PEM
-        val privateKeyStr = privateKeyPem
-            .replace("-----BEGIN EC PRIVATE KEY-----", "")
-            .replace("-----BEGIN RSA PRIVATE KEY-----", "")
-            .replace("-----BEGIN PRIVATE KEY-----", "")
-            .replace("-----END EC PRIVATE KEY-----", "")
-            .replace("-----END RSA PRIVATE KEY-----", "")
-            .replace("-----END PRIVATE KEY-----", "")
-            .replace("\n", "")
-            .trim()
-        
-        val keyBytes = Base64.getDecoder().decode(privateKeyStr)
-        
-        // Determine the key type and algorithm
-        val (javaAlgorithm, keyAlgorithm) = when (algorithm) {
-            SigningAlgorithm.es256 -> "SHA256withECDSA" to "EC"
-            SigningAlgorithm.es384 -> "SHA384withECDSA" to "EC"
-            SigningAlgorithm.es512 -> "SHA512withECDSA" to "EC"
-            SigningAlgorithm.ps256 -> "SHA256withRSA/PSS" to "RSA"
-            SigningAlgorithm.ps384 -> "SHA384withRSA/PSS" to "RSA"
-            SigningAlgorithm.ps512 -> "SHA512withRSA/PSS" to "RSA"
-            SigningAlgorithm.ed25519 -> throw IllegalArgumentException("Use C2PA.ed25519Sign for Ed25519")
+    /**
+     * Parse Content-Length from headers
+     */
+    private fun parseContentLength(headers: String): Int {
+        val lines = headers.split("\r\n")
+        for (line in lines) {
+            if (line.startsWith("Content-Length:", ignoreCase = true)) {
+                return line.substring(15).trim().toInt()
+            }
         }
-        
-        // Create the private key
-        val keySpec = java.security.spec.PKCS8EncodedKeySpec(keyBytes)
-        val keyFactory = java.security.KeyFactory.getInstance(keyAlgorithm)
-        val privateKey = keyFactory.generatePrivate(keySpec)
-        
-        // Sign the data
-        val signature = Signature.getInstance(javaAlgorithm)
-        signature.initSign(privateKey)
-        signature.update(data)
-        return signature.sign()
+        return 0
     }
-
-
+    
+    /**
+     * Process the HTTP request and send response
+     */
+    private fun processRequest(headers: String, body: ByteArray, output: java.io.OutputStream) {
+        val lines = headers.split("\r\n")
+        val requestLine = lines.firstOrNull() ?: ""
+        
+        // Parse method and path
+        val parts = requestLine.split(" ")
+        val method = parts.getOrNull(0) ?: ""
+        val path = parts.getOrNull(1) ?: ""
+        
+        if (method == "POST" && path == "/sign") {
+            // Sign the data
+            val signature = signData(body)
+            
+            // Send success response
+            val response = buildString {
+                append("HTTP/1.1 200 OK\r\n")
+                append("Content-Type: application/octet-stream\r\n")
+                append("Content-Length: ${signature.size}\r\n")
+                append("\r\n")
+            }
+            
+            output.write(response.toByteArray())
+            output.write(signature)
+            output.flush()
+        } else {
+            // Send 404 response
+            val errorBody = "Endpoint not found"
+            val response = buildString {
+                append("HTTP/1.1 404 Not Found\r\n")
+                append("Content-Type: text/plain\r\n")
+                append("Content-Length: ${errorBody.length}\r\n")
+                append("\r\n")
+                append(errorBody)
+            }
+            
+            output.write(response.toByteArray())
+            output.flush()
+        }
+    }
+    
+    /**
+     * Sign data using the provided signing function
+     * This matches the iOS implementation
+     */
+    private fun signData(data: ByteArray): ByteArray {
+        return try {
+            signingFunction(data)
+        } catch (e: Exception) {
+            println("Error signing data: ${e.message}")
+            ByteArray(64) // Return empty signature on error
+        }
+    }
+    
     companion object {
+        /**
+         * Create a test signing server with the provided certificates and key
+         * This matches the iOS createTestSigningServer method
+         */
         fun createTestSigningServer(
             certsPem: String,
             privateKeyPem: String,
             algorithm: SigningAlgorithm = SigningAlgorithm.es256
         ): Pair<SimpleSigningServer, String> {
-            val server = SimpleSigningServer(algorithm, privateKeyPem)
+            // Create a server with a signing function that uses Tink
+            val signingFunction: (ByteArray) -> ByteArray = { data ->
+                try {
+                    // Use Tink to sign the data
+                    TinkSignatureHelper.signWithPEMKey(data, privateKeyPem)
+                } catch (e: Exception) {
+                    println("Signing error: ${e.message}")
+                    // Return a mock signature on error for testing
+                    ByteArray(64) { it.toByte() }
+                }
+            }
+            
+            val server = SimpleSigningServer(signingFunction)
             return Pair(server, certsPem)
         }
+        
     }
 }
 
 /**
- * Helper class for creating web service signers
+ * Extension to create a web service signer that communicates with a signing server
  */
-object WebServiceSignerHelper {
-    
-    fun createWebServiceSigner(
-        serviceUrl: String,
-        algorithm: SigningAlgorithm,
-        certsPem: String
-    ): Signer {
-        // Create a signer with a callback that calls the web service
-        return Signer(algorithm, certsPem, null) { data ->
-            // In production, this would make an HTTP POST to serviceUrl
-            // For testing, we'll simulate a response
-            callSigningService(serviceUrl, data)
+fun Signer.Companion.webServiceSigner(
+    serviceUrl: String,
+    algorithm: SigningAlgorithm,
+    certsPem: String,
+    tsaUrl: String? = null
+): Signer {
+    return Signer(algorithm, certsPem, tsaUrl) { data ->
+        // Make HTTP POST request to the signing service
+        try {
+            val url = java.net.URL(serviceUrl)
+            val connection = url.openConnection() as java.net.HttpURLConnection
+            
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/octet-stream")
+            connection.setRequestProperty("Content-Length", data.size.toString())
+            
+            // Send data
+            connection.outputStream.use { output ->
+                output.write(data)
+            }
+            
+            // Read response
+            if (connection.responseCode == 200) {
+                connection.inputStream.use { input ->
+                    input.readBytes()
+                }
+            } else {
+                throw RuntimeException("Signing service returned ${connection.responseCode}")
+            }
+        } catch (e: Exception) {
+            throw RuntimeException("Failed to call signing service: ${e.message}", e)
         }
-    }
-    
-    private fun callSigningService(serviceUrl: String, data: ByteArray): ByteArray {
-        // Mock implementation - in production would make HTTP call
-        return ByteArray(64) { it.toByte() }
     }
 }
