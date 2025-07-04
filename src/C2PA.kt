@@ -1,9 +1,55 @@
 package org.contentauth.c2pa
 
+import android.content.Context
+import android.net.Uri
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import kotlinx.coroutines.*
 import java.io.Closeable
+import java.io.File
+import java.io.RandomAccessFile
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.KeyStore
+import java.security.PrivateKey
+import java.security.Signature
+import java.security.cert.Certificate
+import java.util.Base64
+import javax.crypto.Cipher
 
 /**
- * Main C2PA class for static operations
+ * Error model matching iOS implementation
+ */
+sealed class C2PAError : Exception() {
+    data class api(override val message: String) : C2PAError() {
+        override fun toString() = "C2PA-API error: $message"
+    }
+    
+    object nilPointer : C2PAError() {
+        override fun toString() = "Unexpected NULL pointer"
+    }
+    
+    object utf8 : C2PAError() {
+        override fun toString() = "Invalid UTF-8 from C2PA"
+    }
+    
+    data class negative(val value: Long) : C2PAError() {
+        override fun toString() = "C2PA negative status $value"
+    }
+}
+
+/**
+ * C2PA version fetched once - matching iOS C2PAVersion
+ */
+val C2PAVersion: String by lazy {
+    C2PA.version()
+}
+
+/**
+ * Main C2PA object for static operations
+ * 
+ * The native libraries are automatically loaded when this object is first accessed.
+ * No manual initialization is required.
  */
 object C2PA {
     init {
@@ -25,39 +71,24 @@ object C2PA {
 
     /**
      * Load settings from a string
-     * @param settings The settings string
-     * @param format The format of the settings
-     * @return 0 on success, -1 on error
      */
     @JvmStatic
     external fun loadSettings(settings: String, format: String): Int
 
     /**
      * Read a manifest store from a file
-     * @param path The file path
-     * @param dataDir Optional directory for binary resources
-     * @return JSON string of the manifest store, or null on error
      */
     @JvmStatic
     external fun readFile(path: String, dataDir: String? = null): String?
 
     /**
      * Read an ingredient from a file
-     * @param path The file path
-     * @param dataDir Optional directory for binary resources
-     * @return JSON string of the ingredient, or null on error
      */
     @JvmStatic
     external fun readIngredientFile(path: String, dataDir: String? = null): String?
 
     /**
      * Sign a file with a manifest
-     * @param sourcePath Source file path
-     * @param destPath Destination file path
-     * @param manifest Manifest JSON string
-     * @param signerInfo Signer information
-     * @param dataDir Optional data directory
-     * @return Result string or null on error
      */
     @JvmStatic
     external fun signFile(
@@ -70,51 +101,106 @@ object C2PA {
 
     /**
      * Sign data using Ed25519
-     * @param data Data to sign
-     * @param privateKey Private key in PEM format
-     * @return Signature bytes or null on error
      */
     @JvmStatic
     external fun ed25519Sign(data: ByteArray, privateKey: String): ByteArray?
+
+    /**
+     * Read a manifest from a file (convenience method matching iOS)
+     */
+    @JvmStatic
+    @Throws(C2PAError::class)
+    fun read(from: File, resourcesDir: File? = null): String {
+        return readFile(from.absolutePath, resourcesDir?.absolutePath)
+            ?: throw C2PAError.api(getError() ?: "Unknown error")
+    }
+
+    /**
+     * Sign a file (convenience method matching iOS)
+     */
+    @JvmStatic
+    @Throws(C2PAError::class)
+    fun sign(
+        source: File,
+        destination: File,
+        manifest: String,
+        signer: SignerInfo,
+        resourcesDir: File? = null
+    ) {
+        val result = signFile(
+            source.absolutePath,
+            destination.absolutePath,
+            manifest,
+            signer,
+            resourcesDir?.absolutePath
+        )
+        if (result == null) {
+            throw C2PAError.api(getError() ?: "Signing failed")
+        }
+    }
 }
 
 /**
- * Seek modes for stream operations
+ * Seek modes for stream operations - matching iOS C2paSeekMode
  */
-enum class SeekMode(val value: Int) {
-    START(0),
-    CURRENT(1),
-    END(2)
+enum class C2paSeekMode(val value: Int) {
+    Start(0),
+    Current(1),
+    End(2)
 }
 
 /**
- * Signing algorithms
+ * Signing algorithms - matching iOS SigningAlgorithm
  */
-enum class SigningAlg(val value: Int) {
-    ES256(0),
-    ES384(1),
-    ES512(2),
-    PS256(3),
-    PS384(4),
-    PS512(5),
-    ED25519(6)
+enum class SigningAlgorithm {
+    es256, es384, es512, ps256, ps384, ps512, ed25519;
+    
+    val cValue: Int
+        get() = ordinal
+    
+    val description: String
+        get() = name
 }
 
 /**
- * Signer information data class
+ * Signer information - matching iOS SignerInfo
  */
 data class SignerInfo(
-    val alg: String,
-    val signCert: String,
-    val privateKey: String,
-    val taUrl: String? = null
-)
+    val algorithm: SigningAlgorithm,
+    val certificatePEM: String,
+    val privateKeyPEM: String,
+    val tsaURL: String? = null
+) {
+    // For backward compatibility with old field names
+    val alg: String get() = algorithm.description
+    val signCert: String get() = certificatePEM
+    val privateKey: String get() = privateKeyPEM
+    val taUrl: String? get() = tsaURL
+}
 
 /**
- * Abstract base class for C2PA streams
+ * Stream options - matching iOS StreamOptions
  */
-abstract class C2PAStream : Closeable {
+class StreamOptions(val rawValue: Int) {
+    companion object {
+        val read = StreamOptions(1 shl 0)
+        val write = StreamOptions(1 shl 1)
+    }
+}
+
+// Type aliases for stream callbacks - moved outside of class
+typealias StreamReader = (buffer: ByteArray, count: Int) -> Int
+typealias StreamSeeker = (offset: Long, origin: C2paSeekMode) -> Long
+typealias StreamWriter = (buffer: ByteArray, count: Int) -> Int
+typealias StreamFlusher = () -> Int
+
+/**
+ * Abstract base class for C2PA streams - matching iOS Stream
+ */
+abstract class Stream : Closeable {
+    
     private var nativeHandle: Long = 0
+    internal val rawPtr: Long get() = nativeHandle
 
     init {
         nativeHandle = createNativeStream()
@@ -122,38 +208,23 @@ abstract class C2PAStream : Closeable {
 
     /**
      * Read data from the stream
-     * @param buffer Buffer to read into
-     * @param length Number of bytes to read
-     * @return Number of bytes read, or negative on error
      */
     abstract fun read(buffer: ByteArray, length: Long): Long
 
     /**
      * Seek to a position in the stream
-     * @param offset Offset to seek
-     * @param mode Seek mode
-     * @return New position, or negative on error
      */
     abstract fun seek(offset: Long, mode: Int): Long
 
     /**
      * Write data to the stream
-     * @param data Data to write
-     * @param length Number of bytes to write
-     * @return Number of bytes written, or negative on error
      */
     abstract fun write(data: ByteArray, length: Long): Long
 
     /**
      * Flush the stream
-     * @return 0 on success, negative on error
      */
     abstract fun flush(): Long
-
-    /**
-     * Get the native handle
-     */
-    internal fun getNativeHandle(): Long = nativeHandle
 
     override fun close() {
         if (nativeHandle != 0L) {
@@ -167,45 +238,44 @@ abstract class C2PAStream : Closeable {
 }
 
 /**
- * C2PA Reader for reading manifest stores
+ * C2PA Reader for reading manifest stores - matching iOS Reader
  */
-class C2PAReader private constructor(private var nativeHandle: Long) : Closeable {
+class Reader private constructor(private var ptr: Long) : Closeable {
     
     companion object {
+        // Libraries are automatically loaded by C2PA object initialization
+        
         /**
          * Create a reader from a stream
-         * @param format Mime type or extension
-         * @param stream The stream to read from
-         * @return Reader instance or null on error
          */
         @JvmStatic
-        fun fromStream(format: String, stream: C2PAStream): C2PAReader? {
-            val handle = fromStream(format, stream.getNativeHandle())
-            return if (handle != 0L) C2PAReader(handle) else null
+        @Throws(C2PAError::class)
+        operator fun invoke(format: String, stream: Stream): Reader {
+            val handle = fromStreamNative(format, stream.rawPtr)
+            if (handle == 0L) {
+                throw C2PAError.api(C2PA.getError() ?: "Unknown error")
+            }
+            return Reader(handle)
         }
 
         /**
          * Create a reader from manifest data and stream
-         * @param format Mime type or extension
-         * @param stream The stream to read from
-         * @param manifestData Manifest data bytes
-         * @return Reader instance or null on error
          */
         @JvmStatic
-        fun fromManifestDataAndStream(
-            format: String,
-            stream: C2PAStream,
-            manifestData: ByteArray
-        ): C2PAReader? {
-            val handle = fromManifestDataAndStream(format, stream.getNativeHandle(), manifestData)
-            return if (handle != 0L) C2PAReader(handle) else null
+        @Throws(C2PAError::class)
+        operator fun invoke(format: String, stream: Stream, manifest: ByteArray): Reader {
+            val handle = fromManifestDataAndStreamNative(format, stream.rawPtr, manifest)
+            if (handle == 0L) {
+                throw C2PAError.api(C2PA.getError() ?: "Unknown error")
+            }
+            return Reader(handle)
         }
 
         @JvmStatic
-        private external fun fromStream(format: String, streamHandle: Long): Long
+        private external fun fromStreamNative(format: String, streamHandle: Long): Long
 
         @JvmStatic
-        private external fun fromManifestDataAndStream(
+        private external fun fromManifestDataAndStreamNative(
             format: String,
             streamHandle: Long,
             manifestData: ByteArray
@@ -214,35 +284,43 @@ class C2PAReader private constructor(private var nativeHandle: Long) : Closeable
 
     /**
      * Convert the reader to JSON
-     * @return JSON string representation
      */
-    fun toJson(): String = toJson(nativeHandle)
+    @Throws(C2PAError::class)
+    fun json(): String {
+        val json = toJsonNative(ptr)
+        if (json == null) {
+            throw C2PAError.api(C2PA.getError() ?: "Failed to convert to JSON")
+        }
+        return json
+    }
 
     /**
      * Write a resource to a stream
-     * @param uri Resource URI
-     * @param stream Stream to write to
-     * @return Size written or negative on error
      */
-    fun resourceToStream(uri: String, stream: C2PAStream): Long =
-        resourceToStream(nativeHandle, uri, stream.getNativeHandle())
+    @Throws(C2PAError::class)
+    fun resource(uri: String, to: Stream) {
+        val result = resourceToStreamNative(ptr, uri, to.rawPtr)
+        if (result < 0) {
+            throw C2PAError.api(C2PA.getError() ?: "Failed to write resource")
+        }
+    }
 
     override fun close() {
-        if (nativeHandle != 0L) {
-            free(nativeHandle)
-            nativeHandle = 0
+        if (ptr != 0L) {
+            free(ptr)
+            ptr = 0
         }
     }
 
     private external fun free(handle: Long)
-    private external fun toJson(handle: Long): String
-    private external fun resourceToStream(handle: Long, uri: String, streamHandle: Long): Long
+    private external fun toJsonNative(handle: Long): String?
+    private external fun resourceToStreamNative(handle: Long, uri: String, streamHandle: Long): Long
 }
 
 /**
- * C2PA Builder for creating manifest stores
+ * C2PA Builder for creating manifest stores - matching iOS Builder
  */
-class C2PABuilder private constructor(private var nativeHandle: Long) : Closeable {
+class Builder private constructor(private var ptr: Long) : Closeable {
     
     /**
      * Sign result containing size and optional manifest bytes
@@ -250,26 +328,32 @@ class C2PABuilder private constructor(private var nativeHandle: Long) : Closeabl
     data class SignResult(val size: Long, val manifestBytes: ByteArray?)
     
     companion object {
+        // Libraries are automatically loaded by C2PA object initialization
+        
         /**
          * Create a builder from JSON
-         * @param manifestJson Manifest JSON string
-         * @return Builder instance or null on error
          */
         @JvmStatic
-        fun fromJson(manifestJson: String): C2PABuilder? {
-            val handle = nativeFromJson(manifestJson)
-            return if (handle != 0L) C2PABuilder(handle) else null
+        @Throws(C2PAError::class)
+        operator fun invoke(manifestJSON: String): Builder {
+            val handle = nativeFromJson(manifestJSON)
+            if (handle == 0L) {
+                throw C2PAError.api(C2PA.getError() ?: "Failed to create builder from JSON")
+            }
+            return Builder(handle)
         }
 
         /**
          * Create a builder from an archive stream
-         * @param stream Archive stream
-         * @return Builder instance or null on error
          */
         @JvmStatic
-        fun fromArchive(stream: C2PAStream): C2PABuilder? {
-            val handle = nativeFromArchive(stream.getNativeHandle())
-            return if (handle != 0L) C2PABuilder(handle) else null
+        @Throws(C2PAError::class)
+        operator fun invoke(archive: Stream): Builder {
+            val handle = nativeFromArchive(archive.rawPtr)
+            if (handle == 0L) {
+                throw C2PAError.api(C2PA.getError() ?: "Failed to create builder from archive")
+            }
+            return Builder(handle)
         }
 
         @JvmStatic
@@ -282,133 +366,193 @@ class C2PABuilder private constructor(private var nativeHandle: Long) : Closeabl
     /**
      * Set the no-embed flag
      */
-    fun setNoEmbed() = setNoEmbed(nativeHandle)
+    fun setNoEmbed() = setNoEmbedNative(ptr)
 
     /**
      * Set the remote URL
-     * @param remoteUrl The remote URL
-     * @return 0 on success, -1 on error
      */
-    fun setRemoteUrl(remoteUrl: String): Int = setRemoteUrl(nativeHandle, remoteUrl)
+    @Throws(C2PAError::class)
+    fun setRemoteURL(url: String) {
+        val result = setRemoteUrlNative(ptr, url)
+        if (result < 0) {
+            throw C2PAError.api(C2PA.getError() ?: "Failed to set remote URL")
+        }
+    }
 
     /**
      * Add a resource to the builder
-     * @param uri Resource URI
-     * @param stream Resource stream
-     * @return 0 on success, -1 on error
      */
-    fun addResource(uri: String, stream: C2PAStream): Int =
-        addResource(nativeHandle, uri, stream.getNativeHandle())
+    @Throws(C2PAError::class)
+    fun addResource(uri: String, stream: Stream) {
+        val result = addResourceNative(ptr, uri, stream.rawPtr)
+        if (result < 0) {
+            throw C2PAError.api(C2PA.getError() ?: "Failed to add resource")
+        }
+    }
 
     /**
      * Add an ingredient from a stream
-     * @param ingredientJson Ingredient JSON
-     * @param format Mime type or extension
-     * @param source Source stream
-     * @return 0 on success, -1 on error
      */
-    fun addIngredientFromStream(
-        ingredientJson: String,
-        format: String,
-        source: C2PAStream
-    ): Int = addIngredientFromStream(nativeHandle, ingredientJson, format, source.getNativeHandle())
+    @Throws(C2PAError::class)
+    fun addIngredient(ingredientJSON: String, format: String, source: Stream) {
+        val result = addIngredientFromStreamNative(ptr, ingredientJSON, format, source.rawPtr)
+        if (result < 0) {
+            throw C2PAError.api(C2PA.getError() ?: "Failed to add ingredient")
+        }
+    }
 
     /**
      * Write the builder to an archive
-     * @param stream Destination stream
-     * @return 0 on success, -1 on error
      */
-    fun toArchive(stream: C2PAStream): Int = toArchive(nativeHandle, stream.getNativeHandle())
+    @Throws(C2PAError::class)
+    fun toArchive(dest: Stream) {
+        val result = toArchiveNative(ptr, dest.rawPtr)
+        if (result < 0) {
+            throw C2PAError.api(C2PA.getError() ?: "Failed to write archive")
+        }
+    }
 
     /**
      * Sign and write the manifest
-     * @param format Mime type or extension
-     * @param source Source stream
-     * @param dest Destination stream
-     * @param signer Signer instance
-     * @return Sign result with size and optional manifest bytes
      */
-    fun sign(
+    @Throws(C2PAError::class)
+    fun sign(format: String, source: Stream, dest: Stream, signer: Signer): SignResult {
+        val result = signNative(ptr, format, source.rawPtr, dest.rawPtr, signer.ptr)
+        if (result.size < 0) {
+            throw C2PAError.api(C2PA.getError() ?: "Failed to sign")
+        }
+        return result
+    }
+
+    /**
+     * Create a hashed placeholder for later signing
+     */
+    @Throws(C2PAError::class)
+    fun dataHashedPlaceholder(reservedSize: Long, format: String): ByteArray {
+        val result = dataHashedPlaceholderNative(ptr, reservedSize, format)
+        if (result == null) {
+            throw C2PAError.api(C2PA.getError() ?: "Failed to create placeholder")
+        }
+        return result
+    }
+
+    /**
+     * Sign using data hash (advanced use)
+     */
+    @Throws(C2PAError::class)
+    fun signDataHashedEmbeddable(
+        signer: Signer,
+        dataHash: String,
         format: String,
-        source: C2PAStream,
-        dest: C2PAStream,
-        signer: C2PASigner
-    ): SignResult = sign(
-        nativeHandle,
-        format,
-        source.getNativeHandle(),
-        dest.getNativeHandle(),
-        signer.getNativeHandle()
-    )
+        asset: Stream? = null
+    ): ByteArray {
+        val result = signDataHashedEmbeddableNative(
+            ptr,
+            signer.ptr,
+            dataHash,
+            format,
+            asset?.rawPtr ?: 0L
+        )
+        if (result == null) {
+            throw C2PAError.api(C2PA.getError() ?: "Failed to sign with data hash")
+        }
+        return result
+    }
 
     override fun close() {
-        if (nativeHandle != 0L) {
-            free(nativeHandle)
-            nativeHandle = 0
+        if (ptr != 0L) {
+            free(ptr)
+            ptr = 0
         }
     }
 
     private external fun free(handle: Long)
-    private external fun setNoEmbed(handle: Long)
-    private external fun setRemoteUrl(handle: Long, remoteUrl: String): Int
-    private external fun addResource(handle: Long, uri: String, streamHandle: Long): Int
-    private external fun addIngredientFromStream(
+    private external fun setNoEmbedNative(handle: Long)
+    private external fun setRemoteUrlNative(handle: Long, remoteUrl: String): Int
+    private external fun addResourceNative(handle: Long, uri: String, streamHandle: Long): Int
+    private external fun addIngredientFromStreamNative(
         handle: Long,
         ingredientJson: String,
         format: String,
         sourceHandle: Long
     ): Int
-    private external fun toArchive(handle: Long, streamHandle: Long): Int
-    private external fun sign(
+    private external fun toArchiveNative(handle: Long, streamHandle: Long): Int
+    private external fun signNative(
         handle: Long,
         format: String,
         sourceHandle: Long,
         destHandle: Long,
         signerHandle: Long
     ): SignResult
+    private external fun dataHashedPlaceholderNative(
+        handle: Long,
+        reservedSize: Long,
+        format: String
+    ): ByteArray?
+    private external fun signDataHashedEmbeddableNative(
+        handle: Long,
+        signerHandle: Long,
+        dataHash: String,
+        format: String,
+        assetHandle: Long
+    ): ByteArray?
 }
 
 /**
- * Callback interface for custom signing operations
+ * C2PA Signer for signing manifests - matching iOS Signer
  */
-interface SignCallback {
-    fun sign(data: ByteArray): ByteArray?
-}
-
-/**
- * C2PA Signer for signing manifests
- */
-class C2PASigner private constructor(private var nativeHandle: Long) : Closeable {
+class Signer private constructor(internal val ptr: Long) : Closeable {
     
     companion object {
+        // Libraries are automatically loaded by C2PA object initialization
+        
         /**
-         * Create a signer from signer info
-         * @param signerInfo Signer information
-         * @return Signer instance or null on error
+         * Create signer from certificates and private key (matching iOS convenience init)
          */
         @JvmStatic
-        fun fromInfo(signerInfo: SignerInfo): C2PASigner? {
-            val handle = nativeFromInfo(signerInfo)
-            return if (handle != 0L) C2PASigner(handle) else null
+        @Throws(C2PAError::class)
+        operator fun invoke(
+            certsPEM: String,
+            privateKeyPEM: String,
+            algorithm: SigningAlgorithm,
+            tsaURL: String? = null
+        ): Signer {
+            val info = SignerInfo(algorithm, certsPEM, privateKeyPEM, tsaURL)
+            return invoke(info)
         }
 
         /**
-         * Create a signer with a custom signing callback
-         * @param algorithm Signing algorithm
-         * @param certificateChain Certificate chain in PEM format
-         * @param tsaURL Optional timestamp authority URL
-         * @param callback Signing callback
-         * @return Signer instance or null on error
+         * Create signer from SignerInfo (matching iOS convenience init)
          */
         @JvmStatic
-        fun fromCallback(
-            algorithm: String,
-            certificateChain: String,
+        @Throws(C2PAError::class)
+        operator fun invoke(info: SignerInfo): Signer {
+            val handle = nativeFromInfo(info)
+            if (handle == 0L) {
+                throw C2PAError.api(C2PA.getError() ?: "Failed to create signer")
+            }
+            return Signer(handle)
+        }
+
+        /**
+         * Create signer with custom signing callback (matching iOS convenience init)
+         */
+        @JvmStatic
+        @Throws(C2PAError::class)
+        operator fun invoke(
+            algorithm: SigningAlgorithm,
+            certificateChainPEM: String,
             tsaURL: String? = null,
-            callback: SignCallback
-        ): C2PASigner? {
-            val handle = nativeFromCallback(algorithm, certificateChain, tsaURL, callback)
-            return if (handle != 0L) C2PASigner(handle) else null
+            sign: (ByteArray) -> ByteArray
+        ): Signer {
+            val callback = object : SignCallback {
+                override fun sign(data: ByteArray): ByteArray = sign(data)
+            }
+            val handle = nativeFromCallback(algorithm.description, certificateChainPEM, tsaURL, callback)
+            if (handle == 0L) {
+                throw C2PAError.api(C2PA.getError() ?: "Failed to create callback signer")
+            }
+            return Signer(handle)
         }
 
         @JvmStatic
@@ -424,205 +568,312 @@ class C2PASigner private constructor(private var nativeHandle: Long) : Closeable
     }
 
     /**
-     * Get the native handle
-     */
-    internal fun getNativeHandle(): Long = nativeHandle
-
-    /**
      * Get the reserve size for this signer
-     * @return Reserve size or negative on error
      */
-    fun reserveSize(): Long = reserveSize(nativeHandle)
+    @Throws(C2PAError::class)
+    fun reserveSize(): Int {
+        val size = reserveSizeNative(ptr)
+        if (size < 0) {
+            throw C2PAError.api(C2PA.getError() ?: "Failed to get reserve size")
+        }
+        return size.toInt()
+    }
 
     override fun close() {
-        if (nativeHandle != 0L) {
-            free(nativeHandle)
-            nativeHandle = 0
+        if (ptr != 0L) {
+            free(ptr)
         }
     }
 
-    private external fun reserveSize(handle: Long): Long
+    private external fun reserveSizeNative(handle: Long): Long
     private external fun free(handle: Long)
 }
 
 /**
- * Memory-based C2PA stream implementation
+ * Callback interface for custom signing operations
  */
-open class MemoryC2PAStream(initialData: ByteArray = ByteArray(0)) : C2PAStream() {
-    private var data = initialData.copyOf()
-    private var position = 0L
-    
-    fun getData(): ByteArray = data.copyOf()
+interface SignCallback {
+    fun sign(data: ByteArray): ByteArray
+}
+
+/**
+ * Stream implementation backed by Data (matching iOS)
+ */
+class DataStream(private val data: ByteArray) : Stream() {
+    private var cursor = 0
     
     override fun read(buffer: ByteArray, length: Long): Long {
-        val bytesToRead = minOf(length.toInt(), (data.size - position).toInt(), buffer.size)
-        if (bytesToRead <= 0) return 0L
-        
-        System.arraycopy(data, position.toInt(), buffer, 0, bytesToRead)
-        position += bytesToRead
-        return bytesToRead.toLong()
+        val remain = data.size - cursor
+        if (remain <= 0) return 0L
+        val n = minOf(remain, length.toInt())
+        System.arraycopy(data, cursor, buffer, 0, n)
+        cursor += n
+        return n.toLong()
     }
 
     override fun seek(offset: Long, mode: Int): Long {
-        position = when (mode) {
-            SeekMode.START.value -> offset
-            SeekMode.CURRENT.value -> position + offset
-            SeekMode.END.value -> data.size + offset
+        cursor = when (mode) {
+            C2paSeekMode.Start.value -> maxOf(0, offset.toInt())
+            C2paSeekMode.Current.value -> maxOf(0, cursor + offset.toInt())
+            C2paSeekMode.End.value -> maxOf(0, data.size + offset.toInt())
             else -> return -1L
         }
-        
-        if (position < 0) position = 0
-        if (position > data.size) position = data.size.toLong()
-        
-        return position
+        return cursor.toLong()
     }
 
-    override fun write(writeData: ByteArray, length: Long): Long {
-        val bytesToWrite = minOf(length.toInt(), writeData.size)
-        val newSize = maxOf(data.size, (position + bytesToWrite).toInt())
-        
-        if (newSize > data.size) {
-            data = data.copyOf(newSize)
-        }
-        
-        System.arraycopy(writeData, 0, data, position.toInt(), bytesToWrite)
-        position += bytesToWrite
-        
-        return bytesToWrite.toLong()
-    }
-
+    override fun write(data: ByteArray, length: Long): Long = -1L // Read-only
     override fun flush(): Long = 0L
 }
 
 /**
- * Example implementation of a file-based C2PA stream
+ * Stream implementation with callbacks (matching iOS)
  */
-class FileC2PAStream(private val file: java.io.RandomAccessFile) : C2PAStream() {
+class CallbackStream(
+    private val reader: StreamReader? = null,
+    private val seeker: StreamSeeker? = null,
+    private val writer: StreamWriter? = null,
+    private val flusher: StreamFlusher? = null
+) : Stream() {
     
     override fun read(buffer: ByteArray, length: Long): Long {
-        return try {
-            val bytesRead = file.read(buffer, 0, length.toInt())
-            bytesRead.toLong()
-        } catch (e: Exception) {
-            -1L
-        }
+        return reader?.invoke(buffer, length.toInt())?.toLong() ?: -1L
     }
 
     override fun seek(offset: Long, mode: Int): Long {
-        return try {
-            when (mode) {
-                SeekMode.START.value -> file.seek(offset)
-                SeekMode.CURRENT.value -> file.seek(file.filePointer + offset)
-                SeekMode.END.value -> file.seek(file.length() + offset)
-                else -> return -1L
-            }
-            file.filePointer
-        } catch (e: Exception) {
-            -1L
-        }
+        val seekMode = C2paSeekMode.values().find { it.value == mode } ?: return -1L
+        return seeker?.invoke(offset, seekMode) ?: -1L
     }
 
     override fun write(data: ByteArray, length: Long): Long {
-        return try {
-            file.write(data, 0, length.toInt())
-            length
-        } catch (e: Exception) {
-            -1L
-        }
+        return writer?.invoke(data, length.toInt())?.toLong() ?: -1L
     }
 
     override fun flush(): Long {
-        return try {
-            file.fd.sync()
-            0L
-        } catch (e: Exception) {
-            -1L
-        }
+        return flusher?.invoke()?.toLong() ?: 0L
     }
 }
 
 /**
- * Stream utilities for creating different types of streams
+ * File-based stream (matching iOS extension)
  */
-object StreamUtils {
-    
-    /**
-     * Create a stream from Android raw resource
-     */
-    fun fromRawResource(context: android.content.Context, resourceId: Int): MemoryC2PAStream {
-        val inputStream = context.resources.openRawResource(resourceId)
-        val data = inputStream.readBytes()
-        inputStream.close()
-        return MemoryC2PAStream(data)
+fun Stream(fileURL: File, truncate: Boolean = true, createIfNeeded: Boolean = true): Stream {
+    if (createIfNeeded && !fileURL.exists()) {
+        fileURL.createNewFile()
     }
     
-    /**
-     * Create a stream from asset
-     */
-    fun fromAsset(context: android.content.Context, assetPath: String): MemoryC2PAStream {
-        val inputStream = context.assets.open(assetPath)
-        val data = inputStream.readBytes()
-        inputStream.close()
-        return MemoryC2PAStream(data)
+    val file = RandomAccessFile(fileURL, "rw")
+    if (truncate) {
+        file.setLength(0)
     }
     
-    /**
-     * Create a stream from file path
-     */
-    fun fromFile(filePath: String, mode: String = "r"): FileC2PAStream {
-        return FileC2PAStream(java.io.RandomAccessFile(filePath, mode))
-    }
-    
-    /**
-     * Create a stream from byte array
-     */
-    fun fromByteArray(data: ByteArray): MemoryC2PAStream {
-        return MemoryC2PAStream(data)
-    }
-    
-    /**
-     * Create a temporary file stream
-     */
-    fun createTempFile(context: android.content.Context, prefix: String, suffix: String): FileC2PAStream {
-        val tempFile = java.io.File.createTempFile(prefix, suffix, context.cacheDir)
-        return FileC2PAStream(java.io.RandomAccessFile(tempFile, "rw"))
-    }
-}
-
-/**
- * Example usage functions
- */
-object C2PAExamples {
-    
-    fun readManifestFromFile(filePath: String): String? {
-        return C2PA.readFile(filePath)
-    }
-    
-    fun signFile(
-        sourcePath: String,
-        destPath: String,
-        manifestJson: String,
-        certPath: String,
-        keyPath: String
-    ): String? {
-        val cert = java.io.File(certPath).readText()
-        val key = java.io.File(keyPath).readText()
-        
-        val signerInfo = SignerInfo(
-            alg = "es256",
-            signCert = cert,
-            privateKey = key
-        )
-        
-        return C2PA.signFile(sourcePath, destPath, manifestJson, signerInfo)
-    }
-    
-    fun readManifestUsingStream(filePath: String, format: String): String? {
-        FileC2PAStream(java.io.RandomAccessFile(filePath, "r")).use { stream ->
-            C2PAReader.fromStream(format, stream)?.use { reader ->
-                return reader.toJson()
+    return object : Stream() {
+        override fun read(buffer: ByteArray, length: Long): Long {
+            return try {
+                val bytesRead = file.read(buffer, 0, length.toInt())
+                bytesRead.toLong()
+            } catch (e: Exception) {
+                -1L
             }
         }
-        return null
+
+        override fun seek(offset: Long, mode: Int): Long {
+            return try {
+                when (mode) {
+                    C2paSeekMode.Start.value -> file.seek(offset)
+                    C2paSeekMode.Current.value -> file.seek(file.filePointer + offset)
+                    C2paSeekMode.End.value -> file.seek(file.length() + offset)
+                    else -> return -1L
+                }
+                file.filePointer
+            } catch (e: Exception) {
+                -1L
+            }
+        }
+
+        override fun write(data: ByteArray, length: Long): Long {
+            return try {
+                file.write(data, 0, length.toInt())
+                length
+            } catch (e: Exception) {
+                -1L
+            }
+        }
+
+        override fun flush(): Long {
+            return try {
+                file.fd.sync()
+                0L
+            } catch (e: Exception) {
+                -1L
+            }
+        }
+        
+        override fun close() {
+            try {
+                file.close()
+            } catch (e: Exception) {
+                // Ignore
+            }
+            super.close()
+        }
     }
+}
+
+/**
+ * Web Service Signing Extension (matching iOS)
+ */
+typealias WebServiceRequestBuilder = (ByteArray) -> HttpURLConnection
+typealias WebServiceResponseParser = (ByteArray, Int) -> ByteArray
+
+fun Signer(
+    algorithm: SigningAlgorithm,
+    certificateChainPEM: String,
+    tsaURL: String? = null,
+    requestBuilder: WebServiceRequestBuilder,
+    responseParser: WebServiceResponseParser = { data, _ -> data }
+): Signer {
+    return Signer(algorithm, certificateChainPEM, tsaURL) { data ->
+        val connection = requestBuilder(data)
+        try {
+            connection.connect()
+            
+            if (connection.responseCode !in 200..299) {
+                throw C2PAError.api("HTTP ${connection.responseCode}")
+            }
+            
+            val responseData = connection.inputStream.use { it.readBytes() }
+            responseParser(responseData, connection.responseCode)
+        } finally {
+            connection.disconnect()
+        }
+    }
+}
+
+/**
+ * Web Service Helpers (matching iOS WebServiceHelpers)
+ */
+enum class WebServiceHelpers {
+    ; // Empty enum to match Swift pattern
+    
+    companion object {
+        fun basicPOSTRequestBuilder(
+            url: URL,
+            authToken: String? = null,
+            contentType: String = "application/octet-stream"
+        ): WebServiceRequestBuilder = { data ->
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", contentType)
+            authToken?.let {
+                connection.setRequestProperty("Authorization", it)
+            }
+            connection.outputStream.use { it.write(data) }
+            connection
+        }
+        
+        fun jsonRequestBuilder(
+            url: URL,
+            authToken: String? = null,
+            additionalFields: Map<String, Any> = emptyMap()
+        ): WebServiceRequestBuilder = { data ->
+            val json = mutableMapOf<String, Any>()
+            json.putAll(additionalFields)
+            json["data"] = Base64.getEncoder().encodeToString(data)
+            
+            val jsonBytes = json.toString().toByteArray()
+            
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json")
+            authToken?.let {
+                connection.setRequestProperty("Authorization", it)
+            }
+            connection.outputStream.use { it.write(jsonBytes) }
+            connection
+        }
+        
+        fun jsonResponseParser(signatureField: String = "signature"): WebServiceResponseParser = { data, _ ->
+            val json = String(data)
+            val regex = """"$signatureField"\s*:\s*"([^"]+)"""".toRegex()
+            val match = regex.find(json) ?: throw C2PAError.api("Signature field not found in response")
+            val signatureBase64 = match.groupValues[1]
+            Base64.getDecoder().decode(signatureBase64)
+        }
+    }
+}
+
+/**
+ * Keychain Signing Extension (matching iOS)
+ */
+fun Signer(
+    algorithm: SigningAlgorithm,
+    certificateChainPEM: String,
+    tsaURL: String? = null,
+    keychainKeyTag: String
+): Signer {
+    val keyStore = KeyStore.getInstance("AndroidKeyStore")
+    keyStore.load(null)
+    
+    val privateKey = keyStore.getKey(keychainKeyTag, null) as? PrivateKey
+        ?: throw C2PAError.api("Key '$keychainKeyTag' not found in keystore")
+    
+    val javaAlgorithm = when (algorithm) {
+        SigningAlgorithm.es256 -> "SHA256withECDSA"
+        SigningAlgorithm.es384 -> "SHA384withECDSA"
+        SigningAlgorithm.es512 -> "SHA512withECDSA"
+        SigningAlgorithm.ps256 -> "SHA256withRSA/PSS"
+        SigningAlgorithm.ps384 -> "SHA384withRSA/PSS"
+        SigningAlgorithm.ps512 -> "SHA512withRSA/PSS"
+        SigningAlgorithm.ed25519 -> throw C2PAError.api("Ed25519 not supported by Android Keystore")
+    }
+    
+    return Signer(algorithm, certificateChainPEM, tsaURL) { data ->
+        val signature = Signature.getInstance(javaAlgorithm)
+        signature.initSign(privateKey)
+        signature.update(data)
+        signature.sign()
+    }
+}
+
+/**
+ * Helper Extensions (matching iOS)
+ */
+fun exportPublicKeyPEM(fromKeychainTag: String): String {
+    val keyStore = KeyStore.getInstance("AndroidKeyStore")
+    keyStore.load(null)
+    
+    val certificate = keyStore.getCertificate(fromKeychainTag)
+        ?: throw C2PAError.api("Certificate not found for alias: $fromKeychainTag")
+    
+    val publicKeyBytes = certificate.publicKey.encoded
+    val base64 = Base64.getEncoder().encodeToString(publicKeyBytes)
+    
+    return buildString {
+        appendLine("-----BEGIN PUBLIC KEY-----")
+        base64.chunked(64).forEach { appendLine(it) }
+        append("-----END PUBLIC KEY-----")
+    }
+}
+
+/**
+ * Format utilities (additional Android utilities)
+ */
+object FormatUtils {
+    /**
+     * Convert a binary c2pa manifest into an embeddable version for the given format
+     */
+    @JvmStatic
+    @Throws(C2PAError::class)
+    fun formatEmbeddable(format: String, manifestBytes: ByteArray): ByteArray {
+        val result = formatEmbeddableNative(format, manifestBytes)
+        if (result == null) {
+            throw C2PAError.api(C2PA.getError() ?: "Failed to format embeddable")
+        }
+        return result
+    }
+
+    @JvmStatic
+    private external fun formatEmbeddableNative(format: String, manifestBytes: ByteArray): ByteArray?
 }

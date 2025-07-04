@@ -1,13 +1,15 @@
 # C2PA Android
 
-This project provides Android bindings for the [C2PA](https://c2pa.org/) (Content Authenticity Initiative) libraries. It wraps the C2PA Rust implementation ([c2pa-rs](https://github.com/contentauth/c2pa-rs)) using its C API bindings to provide native Android support via an AAR library.
+This project provides Android bindings for the [C2PA](https://c2pa.org/) (Coalition for Content Provenance and Authenticity) libraries. It wraps the C2PA Rust implementation ([c2pa-rs](https://github.com/contentauth/c2pa-rs)) using its C API bindings to provide native Android support via an AAR library.
 
 ## Overview
 
 C2PA Android offers:
 
-- Android support via AAR library
-- Kotlin APIs for verifying and signing content with C2PA manifests
+- Android support via AAR library with Kotlin APIs
+- Comprehensive support for C2PA manifest reading, validation, and creation
+- Support for callback-based signing and web service signers
+- Stream-based operations for efficient memory usage
 - Pre-built binaries for fast development
 
 ## Repository Structure
@@ -33,7 +35,16 @@ C2PA Android offers:
 
 - JDK 17 (for Android builds)
 - Android SDK (for Android builds)
+- Android NDK (any recent version - see note below)
 - Make
+
+#### NDK Version
+
+The project will use your default NDK version. If you need to use a specific NDK version, add it to your `local.properties` file:
+
+```properties
+ndk.version=29.0.13599879
+```
 
 ## Installation
 
@@ -87,39 +98,90 @@ dependencies {
 
 ## Usage
 
-### Android Example
+### Android Examples
+
+#### Reading and Verifying Manifests
 
 ```kotlin
-import org.contentauth.c2pa.C2PA
+import org.contentauth.c2pa.*
 
-// Initialize C2PA
-val c2pa = C2PA()
+// Read a manifest from a file
+try {
+    val manifest = C2PA.readFile("/path/to/image.jpg")
+    println("Manifest: $manifest")
+} catch (e: C2PAError) {
+    println("Error reading manifest: $e")
+}
+
+// Read from a stream
+val imageStream = Stream(File("/path/to/image.jpg"))
+try {
+    val reader = Reader("image/jpeg", imageStream)
+    val manifestJson = reader.json()
+    println("Manifest JSON: $manifestJson")
+    reader.close()
+} finally {
+    imageStream.close()
+}
+```
+
+#### Signing Content
+
+```kotlin
+// Sign with built-in signer
+val signerInfo = SignerInfo(
+    algorithm = SigningAlgorithm.es256,
+    certificatePEM = certsPem,
+    privateKeyPEM = privateKeyPem,
+    tsaURL = "https://timestamp.server.com"
+)
+
+val manifest = """{
+    "claim_generator": "my_app/1.0",
+    "assertions": [
+        {"label": "c2pa.actions", "data": {"actions": [{"action": "c2pa.created"}]}}
+    ]
+}"""
 
 try {
-    // Verify a file
-    val isValid = c2pa.verify("/path/to/file.jpg")
-    if (isValid) {
-        // File has a valid C2PA manifest
-        println("Verification successful")
-    } else {
-        // No valid C2PA manifest found
-        println("Verification failed")
-    }
-    
-    // Sign a file
-    val success = c2pa.sign(
-        "/path/to/input.jpg",
-        "/path/to/output.jpg",
-        "/path/to/certificate.pem",
-        "/path/to/privatekey.pem"
+    C2PA.sign(
+        source = File("/path/to/input.jpg"),
+        destination = File("/path/to/output.jpg"),
+        manifest = manifest,
+        signer = signerInfo
     )
-    if (success) {
-        println("Signing successful")
-    } else {
-        println("Signing failed")
-    }
-} catch (e: C2PA.C2PAException) {
-    System.err.println("C2PA error: " + e.message)
+} catch (e: C2PAError) {
+    println("Signing failed: $e")
+}
+```
+
+#### Using Callback Signers
+
+```kotlin
+// Create a callback signer for custom signing implementations
+val callbackSigner = Signer(
+    algorithm = SigningAlgorithm.es256,
+    certificateChainPEM = certsPem,
+    tsaURL = null
+) { data ->
+    // Custom signing logic here
+    // Return signature bytes in raw R,S format for ECDSA
+    myCustomSigningFunction(data)
+}
+
+// Use with Builder API
+val builder = Builder(manifestJson)
+val sourceStream = Stream(File("/path/to/input.jpg"))
+val destStream = Stream(File("/path/to/output.jpg"))
+
+try {
+    val result = builder.sign("image/jpeg", sourceStream, destStream, callbackSigner)
+    println("Signed successfully, size: ${result.size}")
+} finally {
+    builder.close()
+    sourceStream.close()
+    destStream.close()
+    callbackSigner.close()
 }
 ```
 
@@ -207,13 +269,37 @@ The release process is automated through a single workflow:
 
 For an example of how to use this library, see the example app in `/example` which demonstrates integration with Android apps.
 
+## API Features
+
+### Core Classes
+
+- **C2PA** - Main entry point for static operations (reading files, signing)
+- **Reader** - For reading and validating C2PA manifests from streams
+- **Builder** - For creating and signing new C2PA manifests
+- **Signer** - For signing manifests with various key types and methods
+- **Stream** - Efficient stream-based I/O operations
+
+### Signing Options
+
+1. **Direct Signing** - Using private key and certificate PEM strings
+2. **Callback Signing** - Custom signing implementations (HSM, cloud KMS, etc.)
+3. **Web Service Signing** - Remote signing via HTTP endpoints
+4. **Android Keystore** - Hardware-backed key storage (future)
+
+### Important Notes for Callback Signers
+
+When implementing callback signers for ECDSA algorithms (ES256, ES384, ES512), the signature must be returned in raw R,S format, not DER format. The library expects:
+- ES256: 64 bytes (32 bytes R + 32 bytes S)
+- ES384: 96 bytes (48 bytes R + 48 bytes S) 
+- ES512: 132 bytes (66 bytes R + 66 bytes S)
+
 ## JNI Implementation
 
-The Android library uses JNI (Java Native Interface) to connect the Kotlin wrapper to the C2PA C library:
+The Android library uses JNI (Java Native Interface) with enhanced memory safety:
 
-- C API headers are in `template/c2pa/src/main/jni/c2pa.h`
-- JNI implementation is in `src/c2pa_jni.c`
-- Kotlin wrapper is in `src/C2PA.kt`
+- C API headers: `template/c2pa/src/main/jni/c2pa.h`
+- JNI implementation: `src/c2pa_jni.c` (thread-safe, proper cleanup)
+- Kotlin wrapper: `src/C2PA.kt`
 
 ## License
 

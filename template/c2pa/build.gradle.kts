@@ -1,4 +1,5 @@
 import org.gradle.api.publish.maven.MavenPublication
+import java.util.Properties
 
 plugins {
     id("com.android.library")
@@ -30,6 +31,21 @@ android {
             abiFilters.add("armeabi-v7a")
             abiFilters.add("x86")
         }
+    }
+
+    // NDK version - can be overridden in local.properties with ndk.version=XX.X.XXXXXXX
+    // If not specified, the default NDK bundled with Android Studio will be used
+    val localProperties = Properties()
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { localProperties.load(it) }
+    }
+    val localNdkVersion = localProperties.getProperty("ndk.version")
+    if (localNdkVersion != null) {
+        println("Using NDK version from local.properties: $localNdkVersion")
+        ndkVersion = localNdkVersion
+    } else {
+        println("No NDK version specified in local.properties, using default")
     }
 
     buildTypes {
@@ -69,6 +85,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
