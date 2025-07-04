@@ -21,7 +21,7 @@ import javax.crypto.Cipher
  * Error model matching iOS implementation
  */
 sealed class C2PAError : Exception() {
-    data class api(val message: String) : C2PAError() {
+    data class api(override val message: String) : C2PAError() {
         override fun toString() = "C2PA-API error: $message"
     }
     
@@ -55,6 +55,15 @@ enum class C2PA {
         init {
             System.loadLibrary("c2pa_c")
             System.loadLibrary("c2pa_jni")
+        }
+
+        /**
+         * Initialize the C2PA library (call this early in your app)
+         */
+        @JvmStatic
+        fun initialize() {
+            // This method ensures the static initializer runs
+            // Just accessing any method will trigger the init block
         }
 
         /**
@@ -189,14 +198,16 @@ class StreamOptions(val rawValue: Int) {
     }
 }
 
+// Type aliases for stream callbacks - moved outside of class
+typealias StreamReader = (buffer: ByteArray, count: Int) -> Int
+typealias StreamSeeker = (offset: Long, origin: C2paSeekMode) -> Long
+typealias StreamWriter = (buffer: ByteArray, count: Int) -> Int
+typealias StreamFlusher = () -> Int
+
 /**
  * Abstract base class for C2PA streams - matching iOS Stream
  */
 abstract class Stream : Closeable {
-    typealias Reader = (buffer: ByteArray, count: Int) -> Int
-    typealias Seeker = (offset: Long, origin: C2paSeekMode) -> Long
-    typealias Writer = (buffer: ByteArray, count: Int) -> Int
-    typealias Flusher = () -> Int
     
     private var nativeHandle: Long = 0
     internal val rawPtr: Long get() = nativeHandle
@@ -242,6 +253,11 @@ abstract class Stream : Closeable {
 class Reader private constructor(private var ptr: Long) : Closeable {
     
     companion object {
+        init {
+            // Ensure libraries are loaded when Reader is accessed
+            C2PA.initialize()
+        }
+        
         /**
          * Create a reader from a stream
          */
@@ -325,6 +341,11 @@ class Builder private constructor(private var ptr: Long) : Closeable {
     data class SignResult(val size: Long, val manifestBytes: ByteArray?)
     
     companion object {
+        init {
+            // Ensure libraries are loaded when Builder is accessed
+            C2PA.initialize()
+        }
+        
         /**
          * Create a builder from JSON
          */
@@ -499,6 +520,11 @@ class Builder private constructor(private var ptr: Long) : Closeable {
 class Signer private constructor(internal val ptr: Long) : Closeable {
     
     companion object {
+        init {
+            // Ensure libraries are loaded when Signer is accessed
+            C2PA.initialize()
+        }
+        
         /**
          * Create signer from certificates and private key (matching iOS convenience init)
          */
@@ -622,27 +648,27 @@ class DataStream(private val data: ByteArray) : Stream() {
  * Stream implementation with callbacks (matching iOS)
  */
 class CallbackStream(
-    private val read: Reader? = null,
-    private val seek: Seeker? = null,
-    private val write: Writer? = null,
-    private val flush: Flusher? = null
+    private val reader: StreamReader? = null,
+    private val seeker: StreamSeeker? = null,
+    private val writer: StreamWriter? = null,
+    private val flusher: StreamFlusher? = null
 ) : Stream() {
     
     override fun read(buffer: ByteArray, length: Long): Long {
-        return read?.invoke(buffer, length.toInt())?.toLong() ?: -1L
+        return reader?.invoke(buffer, length.toInt())?.toLong() ?: -1L
     }
 
     override fun seek(offset: Long, mode: Int): Long {
         val seekMode = C2paSeekMode.values().find { it.value == mode } ?: return -1L
-        return seek?.invoke(offset, seekMode) ?: -1L
+        return seeker?.invoke(offset, seekMode) ?: -1L
     }
 
     override fun write(data: ByteArray, length: Long): Long {
-        return write?.invoke(data, length.toInt())?.toLong() ?: -1L
+        return writer?.invoke(data, length.toInt())?.toLong() ?: -1L
     }
 
     override fun flush(): Long {
-        return flush?.invoke()?.toLong() ?: 0L
+        return flusher?.invoke()?.toLong() ?: 0L
     }
 }
 

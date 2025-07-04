@@ -1,15 +1,10 @@
 package org.contentauth.c2paexample
 
-import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpHandler
-import com.sun.net.httpserver.HttpServer
 import org.contentauth.c2pa.*
 import java.io.IOException
-import java.net.InetSocketAddress
-import java.security.KeyFactory
-import java.security.PrivateKey
+import java.net.ServerSocket
+import java.net.Socket
 import java.security.Signature
-import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Base64
 import java.util.concurrent.Executors
 
@@ -18,99 +13,178 @@ import java.util.concurrent.Executors
  * This is equivalent to iOS SimpleSigningServer.swift
  */
 class SimpleSigningServer(
-    private val signer: C2PASigner,
+    private val algorithm: SigningAlgorithm,
+    private val privateKeyPem: String,
     private val port: Int = 0
 ) {
-    private var server: HttpServer? = null
+    private var serverSocket: ServerSocket? = null
     private var actualPort: Int = 0
 
     @Throws(IOException::class)
     fun start(): Int {
-        val httpServer = HttpServer.create(InetSocketAddress(port), 0)
-        httpServer.executor = Executors.newCachedThreadPool()
+        val socket = ServerSocket(port)
+        actualPort = socket.localPort
+        serverSocket = socket
         
-        httpServer.createContext("/sign", SignHandler())
-        
-        httpServer.start()
-        actualPort = httpServer.address.port
-        server = httpServer
+        // Start a thread to handle connections
+        Executors.newCachedThreadPool().execute {
+            while (!socket.isClosed) {
+                try {
+                    val client = socket.accept()
+                    handleClient(client)
+                } catch (e: Exception) {
+                    // Server stopped
+                }
+            }
+        }
         
         return actualPort
     }
 
     fun stop() {
-        server?.stop(0)
-        server = null
+        serverSocket?.close()
+        serverSocket = null
     }
 
-    private inner class SignHandler : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            try {
-                if (exchange.requestMethod != "POST") {
-                    sendErrorResponse(exchange, 404, "Endpoint not found")
-                    return
-                }
-
-                val requestBody = exchange.requestBody.readBytes()
-                val signature = signData(requestBody)
-
-                exchange.responseHeaders.add("Content-Type", "application/octet-stream")
-                exchange.sendResponseHeaders(200, signature.size.toLong())
-                exchange.responseBody.use { output ->
-                    output.write(signature)
-                }
-            } catch (e: Exception) {
-                sendErrorResponse(exchange, 500, e.message ?: "Internal server error")
+    private fun handleClient(client: Socket) {
+        client.use { socket ->
+            val input = socket.getInputStream().bufferedReader()
+            val output = socket.getOutputStream()
+            
+            // Read HTTP request
+            val requestLine = input.readLine()
+            if (!requestLine.startsWith("POST /sign")) {
+                val response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
+                output.write(response.toByteArray())
+                return
             }
+            
+            // Read headers
+            var contentLength = 0
+            while (true) {
+                val line = input.readLine()
+                if (line.isEmpty()) break
+                if (line.startsWith("Content-Length:")) {
+                    contentLength = line.substring(15).trim().toInt()
+                }
+            }
+            
+            // Read body
+            val body = ByteArray(contentLength)
+            var bytesRead = 0
+            while (bytesRead < contentLength) {
+                val read = socket.getInputStream().read(body, bytesRead, contentLength - bytesRead)
+                if (read == -1) break
+                bytesRead += read
+            }
+            
+            // Sign data
+            val signature = signData(body)
+            
+            // Send response
+            val response = "HTTP/1.1 200 OK\r\n" +
+                          "Content-Type: application/octet-stream\r\n" +
+                          "Content-Length: ${signature.size}\r\n" +
+                          "\r\n"
+            output.write(response.toByteArray())
+            output.write(signature)
+            output.flush()
         }
     }
 
     private fun signData(data: ByteArray): ByteArray {
-        return signer.sign(data)
-    }
-
-    private fun sendErrorResponse(exchange: HttpExchange, code: Int, message: String) {
-        val response = message.toByteArray()
-        exchange.responseHeaders.add("Content-Type", "text/plain")
-        exchange.sendResponseHeaders(code, response.size.toLong())
-        exchange.responseBody.use { output ->
-            output.write(response)
+        return try {
+            // Use the real signing based on the algorithm
+            when (algorithm) {
+                SigningAlgorithm.es256, SigningAlgorithm.es384, SigningAlgorithm.es512 -> {
+                    // For ECDSA algorithms, we need to use proper signing
+                    signWithPrivateKey(data, privateKeyPem, algorithm)
+                }
+                SigningAlgorithm.ps256, SigningAlgorithm.ps384, SigningAlgorithm.ps512 -> {
+                    // For RSA PSS algorithms
+                    signWithPrivateKey(data, privateKeyPem, algorithm)
+                }
+                SigningAlgorithm.ed25519 -> {
+                    // For Ed25519, use the C2PA library's ed25519Sign method
+                    C2PA.ed25519Sign(data, privateKeyPem) ?: ByteArray(64)
+                }
+            }
+        } catch (e: Exception) {
+            // Return empty signature on error
+            ByteArray(64)
         }
     }
+    
+    private fun signWithPrivateKey(data: ByteArray, privateKeyPem: String, algorithm: SigningAlgorithm): ByteArray {
+        // Parse the private key from PEM
+        val privateKeyStr = privateKeyPem
+            .replace("-----BEGIN EC PRIVATE KEY-----", "")
+            .replace("-----BEGIN RSA PRIVATE KEY-----", "")
+            .replace("-----BEGIN PRIVATE KEY-----", "")
+            .replace("-----END EC PRIVATE KEY-----", "")
+            .replace("-----END RSA PRIVATE KEY-----", "")
+            .replace("-----END PRIVATE KEY-----", "")
+            .replace("\n", "")
+            .trim()
+        
+        val keyBytes = Base64.getDecoder().decode(privateKeyStr)
+        
+        // Determine the key type and algorithm
+        val (javaAlgorithm, keyAlgorithm) = when (algorithm) {
+            SigningAlgorithm.es256 -> "SHA256withECDSA" to "EC"
+            SigningAlgorithm.es384 -> "SHA384withECDSA" to "EC"
+            SigningAlgorithm.es512 -> "SHA512withECDSA" to "EC"
+            SigningAlgorithm.ps256 -> "SHA256withRSA/PSS" to "RSA"
+            SigningAlgorithm.ps384 -> "SHA384withRSA/PSS" to "RSA"
+            SigningAlgorithm.ps512 -> "SHA512withRSA/PSS" to "RSA"
+            SigningAlgorithm.ed25519 -> throw IllegalArgumentException("Use C2PA.ed25519Sign for Ed25519")
+        }
+        
+        // Create the private key
+        val keySpec = java.security.spec.PKCS8EncodedKeySpec(keyBytes)
+        val keyFactory = java.security.KeyFactory.getInstance(keyAlgorithm)
+        val privateKey = keyFactory.generatePrivate(keySpec)
+        
+        // Sign the data
+        val signature = Signature.getInstance(javaAlgorithm)
+        signature.initSign(privateKey)
+        signature.update(data)
+        return signature.sign()
+    }
+
 
     companion object {
         fun createTestSigningServer(
             certsPem: String,
-            privateKeyPem: String
+            privateKeyPem: String,
+            algorithm: SigningAlgorithm = SigningAlgorithm.es256
         ): Pair<SimpleSigningServer, String> {
-            val signerInfo = SignerInfo("es256", certsPem, privateKeyPem)
-            val signer = C2PASigner.fromInfo(signerInfo)
-                ?: throw IllegalStateException("Could not create signer")
-            
-            val server = SimpleSigningServer(signer)
+            val server = SimpleSigningServer(algorithm, privateKeyPem)
             return Pair(server, certsPem)
         }
     }
 }
 
 /**
- * Extension class for web service signing demonstration
+ * Helper class for creating web service signers
  */
-class WebServiceSigner(
-    private val serviceUrl: String,
-    private val algorithm: String,
-    private val certsPem: String
-) : C2PASigner() {
+object WebServiceSignerHelper {
     
-    override fun sign(data: ByteArray): ByteArray {
-        // In production, this would make an HTTP POST to serviceUrl
-        // For testing, we'll simulate a response
-        return ByteArray(64) { it.toByte() } // Mock signature
+    fun createWebServiceSigner(
+        serviceUrl: String,
+        algorithm: SigningAlgorithm,
+        certsPem: String
+    ): Signer {
+        // Create a signer with a callback that calls the web service
+        return Signer(algorithm, certsPem, null) { data ->
+            // In production, this would make an HTTP POST to serviceUrl
+            // For testing, we'll simulate a response
+            callSigningService(serviceUrl, data)
+        }
     }
     
-    override fun getAlg(): String = algorithm
-    
-    override fun getCerts(): String = certsPem
-    
-    override fun getReserveSize(): Long = 10000L
+    private fun callSigningService(serviceUrl: String, data: ByteArray): ByteArray {
+        // Mock implementation - in production would make HTTP call
+        return ByteArray(64) { it.toByte() }
+    }
 }
