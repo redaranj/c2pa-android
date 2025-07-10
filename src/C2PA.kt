@@ -18,7 +18,7 @@ import java.util.Base64
 import javax.crypto.Cipher
 
 /**
- * Error model matching iOS implementation
+ * Error model for C2PA operations
  */
 sealed class C2PAError : Exception() {
     data class api(override val message: String) : C2PAError() {
@@ -39,7 +39,7 @@ sealed class C2PAError : Exception() {
 }
 
 /**
- * C2PA version fetched once - matching iOS C2PAVersion
+ * C2PA version fetched once
  */
 val C2PAVersion: String by lazy {
     C2PA.version()
@@ -106,7 +106,7 @@ object C2PA {
     external fun ed25519Sign(data: ByteArray, privateKey: String): ByteArray?
 
     /**
-     * Read a manifest from a file (convenience method matching iOS)
+     * Read a manifest from a file (convenience method)
      */
     @JvmStatic
     @Throws(C2PAError::class)
@@ -116,7 +116,7 @@ object C2PA {
     }
 
     /**
-     * Sign a file (convenience method matching iOS)
+     * Sign a file (convenience method)
      */
     @JvmStatic
     @Throws(C2PAError::class)
@@ -141,7 +141,7 @@ object C2PA {
 }
 
 /**
- * Seek modes for stream operations - matching iOS C2paSeekMode
+ * Seek modes for stream operations
  */
 enum class C2paSeekMode(val value: Int) {
     Start(0),
@@ -150,7 +150,7 @@ enum class C2paSeekMode(val value: Int) {
 }
 
 /**
- * Signing algorithms - matching iOS SigningAlgorithm
+ * Signing algorithms
  */
 enum class SigningAlgorithm {
     es256, es384, es512, ps256, ps384, ps512, ed25519;
@@ -163,7 +163,7 @@ enum class SigningAlgorithm {
 }
 
 /**
- * Signer information - matching iOS SignerInfo
+ * Signer information
  */
 data class SignerInfo(
     val algorithm: SigningAlgorithm,
@@ -179,7 +179,7 @@ data class SignerInfo(
 }
 
 /**
- * Stream options - matching iOS StreamOptions
+ * Stream options
  */
 class StreamOptions(val rawValue: Int) {
     companion object {
@@ -195,7 +195,7 @@ typealias StreamWriter = (buffer: ByteArray, count: Int) -> Int
 typealias StreamFlusher = () -> Int
 
 /**
- * Abstract base class for C2PA streams - matching iOS Stream
+ * Abstract base class for C2PA streams
  */
 abstract class Stream : Closeable {
     
@@ -238,7 +238,7 @@ abstract class Stream : Closeable {
 }
 
 /**
- * C2PA Reader for reading manifest stores - matching iOS Reader
+ * C2PA Reader for reading manifest stores
  */
 class Reader private constructor(private var ptr: Long) : Closeable {
     
@@ -318,7 +318,7 @@ class Reader private constructor(private var ptr: Long) : Closeable {
 }
 
 /**
- * C2PA Builder for creating manifest stores - matching iOS Builder
+ * C2PA Builder for creating manifest stores
  */
 class Builder private constructor(private var ptr: Long) : Closeable {
     
@@ -499,15 +499,15 @@ class Builder private constructor(private var ptr: Long) : Closeable {
 }
 
 /**
- * C2PA Signer for signing manifests - matching iOS Signer
+ * C2PA Signer for signing manifests
  */
-class Signer private constructor(internal val ptr: Long) : Closeable {
+class Signer private constructor(internal var ptr: Long) : Closeable {
     
     companion object {
         // Libraries are automatically loaded by C2PA object initialization
         
         /**
-         * Create signer from certificates and private key (matching iOS convenience init)
+         * Create signer from certificates and private key
          */
         @JvmStatic
         @Throws(C2PAError::class)
@@ -522,7 +522,7 @@ class Signer private constructor(internal val ptr: Long) : Closeable {
         }
 
         /**
-         * Create signer from SignerInfo (matching iOS convenience init)
+         * Create signer from SignerInfo
          */
         @JvmStatic
         @Throws(C2PAError::class)
@@ -535,7 +535,7 @@ class Signer private constructor(internal val ptr: Long) : Closeable {
         }
 
         /**
-         * Create signer with custom signing callback (matching iOS convenience init)
+         * Create signer with custom signing callback
          */
         @JvmStatic
         @Throws(C2PAError::class)
@@ -576,12 +576,16 @@ class Signer private constructor(internal val ptr: Long) : Closeable {
         if (size < 0) {
             throw C2PAError.api(C2PA.getError() ?: "Failed to get reserve size")
         }
+        if (size > Int.MAX_VALUE) {
+            throw C2PAError.api("Reserve size too large: $size")
+        }
         return size.toInt()
     }
 
     override fun close() {
         if (ptr != 0L) {
             free(ptr)
+            ptr = 0L
         }
     }
 
@@ -597,7 +601,7 @@ interface SignCallback {
 }
 
 /**
- * Stream implementation backed by Data (matching iOS)
+ * Stream implementation backed by Data
  */
 class DataStream(private val data: ByteArray) : Stream() {
     private var cursor = 0
@@ -605,17 +609,19 @@ class DataStream(private val data: ByteArray) : Stream() {
     override fun read(buffer: ByteArray, length: Long): Long {
         val remain = data.size - cursor
         if (remain <= 0) return 0L
-        val n = minOf(remain, length.toInt())
+        val safeLen = length.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val n = minOf(remain, safeLen)
         System.arraycopy(data, cursor, buffer, 0, n)
         cursor += n
         return n.toLong()
     }
 
     override fun seek(offset: Long, mode: Int): Long {
+        val safeOffset = offset.coerceIn(-Int.MAX_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
         cursor = when (mode) {
-            C2paSeekMode.Start.value -> maxOf(0, offset.toInt())
-            C2paSeekMode.Current.value -> maxOf(0, cursor + offset.toInt())
-            C2paSeekMode.End.value -> maxOf(0, data.size + offset.toInt())
+            C2paSeekMode.Start.value -> maxOf(0, minOf(data.size, safeOffset))
+            C2paSeekMode.Current.value -> maxOf(0, minOf(data.size, cursor + safeOffset))
+            C2paSeekMode.End.value -> maxOf(0, minOf(data.size, data.size + safeOffset))
             else -> return -1L
         }
         return cursor.toLong()
@@ -626,7 +632,7 @@ class DataStream(private val data: ByteArray) : Stream() {
 }
 
 /**
- * Stream implementation with callbacks (matching iOS)
+ * Stream implementation with callbacks
  */
 class CallbackStream(
     private val reader: StreamReader? = null,
@@ -636,7 +642,8 @@ class CallbackStream(
 ) : Stream() {
     
     override fun read(buffer: ByteArray, length: Long): Long {
-        return reader?.invoke(buffer, length.toInt())?.toLong() ?: -1L
+        val safeLen = length.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        return reader?.invoke(buffer, safeLen)?.toLong() ?: -1L
     }
 
     override fun seek(offset: Long, mode: Int): Long {
@@ -645,7 +652,8 @@ class CallbackStream(
     }
 
     override fun write(data: ByteArray, length: Long): Long {
-        return writer?.invoke(data, length.toInt())?.toLong() ?: -1L
+        val safeLen = length.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        return writer?.invoke(data, safeLen)?.toLong() ?: -1L
     }
 
     override fun flush(): Long {
@@ -654,7 +662,7 @@ class CallbackStream(
 }
 
 /**
- * File-based stream (matching iOS extension)
+ * File-based stream
  */
 fun Stream(fileURL: File, truncate: Boolean = true, createIfNeeded: Boolean = true): Stream {
     if (createIfNeeded && !fileURL.exists()) {
@@ -669,7 +677,8 @@ fun Stream(fileURL: File, truncate: Boolean = true, createIfNeeded: Boolean = tr
     return object : Stream() {
         override fun read(buffer: ByteArray, length: Long): Long {
             return try {
-                val bytesRead = file.read(buffer, 0, length.toInt())
+                val safeLen = length.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                val bytesRead = file.read(buffer, 0, safeLen)
                 bytesRead.toLong()
             } catch (e: Exception) {
                 -1L
@@ -692,8 +701,9 @@ fun Stream(fileURL: File, truncate: Boolean = true, createIfNeeded: Boolean = tr
 
         override fun write(data: ByteArray, length: Long): Long {
             return try {
-                file.write(data, 0, length.toInt())
-                length
+                val safeLen = length.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                file.write(data, 0, safeLen)
+                safeLen.toLong()
             } catch (e: Exception) {
                 -1L
             }
@@ -720,7 +730,7 @@ fun Stream(fileURL: File, truncate: Boolean = true, createIfNeeded: Boolean = tr
 }
 
 /**
- * Web Service Signing Extension (matching iOS)
+ * Web Service Signing Extension
  */
 typealias WebServiceRequestBuilder = (ByteArray) -> HttpURLConnection
 typealias WebServiceResponseParser = (ByteArray, Int) -> ByteArray
@@ -750,7 +760,7 @@ fun Signer(
 }
 
 /**
- * Web Service Helpers (matching iOS WebServiceHelpers)
+ * Web Service Helpers
  */
 enum class WebServiceHelpers {
     ; // Empty enum to match Swift pattern
@@ -805,7 +815,7 @@ enum class WebServiceHelpers {
 }
 
 /**
- * Keychain Signing Extension (matching iOS)
+ * Keychain Signing Extension
  */
 fun Signer(
     algorithm: SigningAlgorithm,
@@ -838,7 +848,7 @@ fun Signer(
 }
 
 /**
- * Helper Extensions (matching iOS)
+ * Helper Extensions
  */
 fun exportPublicKeyPEM(fromKeychainTag: String): String {
     val keyStore = KeyStore.getInstance("AndroidKeyStore")

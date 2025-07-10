@@ -20,8 +20,8 @@ import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 
 /**
- * StrongBox signer configuration (matching iOS SecureEnclaveSignerConfig)
- * StrongBox is Android's equivalent to iOS Secure Enclave
+ * StrongBox signer configuration
+ * StrongBox is Android's hardware security module
  */
 @RequiresApi(Build.VERSION_CODES.P)
 data class StrongBoxSignerConfig(
@@ -30,7 +30,7 @@ data class StrongBoxSignerConfig(
 )
 
 /**
- * StrongBox Signing Extension (matching iOS Secure Enclave extension)
+ * StrongBox Signing Extension
  */
 @RequiresApi(Build.VERSION_CODES.P)
 fun Signer(
@@ -66,7 +66,7 @@ fun Signer(
 }
 
 /**
- * Create a StrongBox key (internal helper matching iOS)
+ * Create a StrongBox key (internal helper)
  */
 @RequiresApi(Build.VERSION_CODES.P)
 private fun createStrongBoxKey(config: StrongBoxSignerConfig): PrivateKey {
@@ -91,7 +91,7 @@ private fun createStrongBoxKey(config: StrongBoxSignerConfig): PrivateKey {
 }
 
 /**
- * Delete a StrongBox key (matching iOS deleteSecureEnclaveKey)
+ * Delete a StrongBox key
  */
 fun deleteStrongBoxKey(keyTag: String): Boolean {
     return try {
@@ -106,7 +106,7 @@ fun deleteStrongBoxKey(keyTag: String): Boolean {
 
 /**
  * Additional Android-specific hardware security utilities
- * These don't have direct iOS equivalents but provide similar functionality
+ * Hardware security helper functions
  */
 object HardwareSecurity {
     
