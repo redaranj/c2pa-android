@@ -1,467 +1,247 @@
 package org.contentauth.c2paexample
 
-import android.content.Context
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import org.contentauth.c2pa.*
-import org.json.JSONObject
+import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.junit.Assert.*
-import org.junit.Before
-import java.io.File
 
+/**
+ * Instrumented tests for C2PA library functionality.
+ * These tests run on an Android device or emulator and use the same test suite
+ * as the UI tests in C2PATestScreen.
+ */
 @RunWith(AndroidJUnit4::class)
-class C2PAUnitTests {
+class C2PAInstrumentedTests {
     
-    private lateinit var context: Context
+    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val testSuite = C2PATestSuite(context)
     
-    @Before
-    fun setUp() {
-        context = ApplicationProvider.getApplicationContext()
+    @Test
+    fun testLibraryVersion() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Library Version" }
+        assertNotNull("Library Version test should exist", result)
+        assertTrue("Library Version test should pass: ${result?.message}", result?.success == true)
     }
     
     @Test
-    fun testLibraryVersion() {
-        val version = C2PA.version()
-        assertNotNull("Version should not be null", version)
-        assertTrue("Version should not be empty", version.isNotEmpty())
-        assertTrue("Version should contain dots", version.contains("."))
+    fun testErrorHandling() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Error Handling" }
+        assertNotNull("Error Handling test should exist", result)
+        assertTrue("Error Handling test should pass: ${result?.message}", result?.success == true)
     }
     
     @Test
-    fun testErrorHandling() {
-        val result = C2PA.readFile("/non/existent/file.jpg")
-        assertNull("Should return null for non-existent file", result)
-        
-        val error = C2PA.getError()
-        assertNotNull("Should have error message for non-existent file", error)
+    fun testReadManifestFromTestImage() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Read Manifest from Test Image" }
+        assertNotNull("Read Manifest test should exist", result)
+        assertTrue("Read Manifest test should pass: ${result?.message}", result?.success == true)
     }
     
     @Test
-    fun testReadManifestFromTestImage() {
-        val testImageFile = copyResourceToFile(R.raw.adobe_20220124_ci, "test_adobe.jpg")
-        
-        val manifest = C2PA.readFile(testImageFile.absolutePath)
-        assertNotNull("Should read manifest from Adobe test image", manifest)
-        
-        val json = JSONObject(manifest!!)
-        assertTrue("Should contain manifests", json.has("manifests"))
-        
-        testImageFile.delete()
+    fun testStreamAPI() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Stream API" }
+        assertNotNull("Stream API test should exist", result)
+        assertTrue("Stream API test should pass: ${result?.message}", result?.success == true)
     }
     
     @Test
-    fun testStreamAPI() {
-        val testImageData = getResourceAsBytes(R.raw.adobe_20220124_ci)
-        val stream = MemoryC2PAStream(testImageData)
-        
-        val reader = C2PAReader.fromStream("image/jpeg", stream)
-        assertNotNull("Should create reader from stream", reader)
-        
-        val json = reader!!.toJson()
-        assertNotNull("Should get JSON from reader", json)
-        assertTrue("JSON should not be empty", json.isNotEmpty())
-        
-        reader.close()
-        stream.close()
+    fun testBuilderAPI() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Builder API" }
+        assertNotNull("Builder API test should exist", result)
+        assertTrue("Builder API test should pass: ${result?.message}", result?.success == true)
     }
     
     @Test
-    fun testBuilderAPI() {
-        val manifestJson = """{
-            "claim_generator": "test_app/1.0",
-            "assertions": [
-                {
-                    "label": "c2pa.test",
-                    "data": {
-                        "test": true
-                    }
-                }
-            ]
-        }"""
-        
-        val builder = C2PABuilder.fromJson(manifestJson)
-        assertNotNull("Should create builder from JSON", builder)
-        
-        val sourceImageData = getResourceAsBytes(R.raw.pexels_asadphoto_457882)
-        val sourceStream = MemoryC2PAStream(sourceImageData)
-        val destStream = MemoryC2PAStream()
-        
-        val certPem = getResourceAsString(R.raw.es256_certs)
-        val keyPem = getResourceAsString(R.raw.es256_private)
-        
-        val signerInfo = SignerInfo(
-            alg = "es256",
-            signCert = certPem,
-            privateKey = keyPem
-        )
-        
-        val signer = C2PASigner.fromInfo(signerInfo)
-        assertNotNull("Should create signer", signer)
-        
-        val result = builder!!.sign("image/jpeg", sourceStream, destStream, signer!!)
-        assertTrue("Signed image should be larger than 0", destStream.getData().isNotEmpty())
-        assertTrue("Signed image should be larger than original", destStream.getData().size > sourceImageData.size)
-        
-        signer.close()
-        builder.close()
-        sourceStream.close()
-        destStream.close()
+    fun testBuilderNoEmbed() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Builder No-Embed" }
+        assertNotNull("Builder No-Embed test should exist", result)
+        assertTrue("Builder No-Embed test should pass: ${result?.message}", result?.success == true)
     }
     
     @Test
-    fun testBuilderNoEmbed() {
-        val manifestJson = """{
-            "claim_generator": "test_app/1.0",
-            "assertions": [
-                {
-                    "label": "c2pa.test",
-                    "data": {
-                        "test": true
-                    }
-                }
-            ]
-        }"""
-        
-        val builder = C2PABuilder.fromJson(manifestJson)
-        assertNotNull("Should create builder", builder)
-        
-        builder!!.setNoEmbed()
-        
-        val archiveStream = MemoryC2PAStream()
-        val result = builder.toArchive(archiveStream)
-        assertEquals("Should successfully create archive", 0, result)
-        
-        val archiveData = archiveStream.getData()
-        assertTrue("Archive should contain data", archiveData.isNotEmpty())
-        
-        builder.close()
-        archiveStream.close()
+    fun testReadIngredient() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Read Ingredient" }
+        assertNotNull("Read Ingredient test should exist", result)
+        assertTrue("Read Ingredient test should pass: ${result?.message}", result?.success == true)
     }
     
     @Test
-    fun testReadIngredient() {
-        val testImageFile = copyResourceToFile(R.raw.adobe_20220124_ci, "test_ingredient.jpg")
-        
-        val ingredient = C2PA.readIngredientFile(testImageFile.absolutePath)
-        
-        testImageFile.delete()
+    fun testInvalidFileHandling() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Invalid File Handling" }
+        assertNotNull("Invalid File Handling test should exist", result)
+        assertTrue("Invalid File Handling test should pass: ${result?.message}", result?.success == true)
     }
     
     @Test
-    fun testInvalidFileHandling() {
-        val textFile = File(context.cacheDir, "test.txt")
-        textFile.writeText("This is not an image file")
-        
-        val result = C2PA.readFile(textFile.absolutePath)
-        assertNull("Should return null for text file", result)
-        
-        val error = C2PA.getError()
-        assertNotNull("Should have error for invalid file", error)
-        
-        textFile.delete()
+    fun testResourceReading() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Resource Reading" }
+        assertNotNull("Resource Reading test should exist", result)
+        assertTrue("Resource Reading test should pass: ${result?.message}", result?.success == true)
     }
     
     @Test
-    fun testResourceReading() {
-        val testImageData = getResourceAsBytes(R.raw.adobe_20220124_ci)
-        val stream = MemoryC2PAStream(testImageData)
+    fun testBuilderRemoteURL() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Builder Remote URL" }
+        assertNotNull("Builder Remote URL test should exist", result)
+        assertTrue("Builder Remote URL test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testBuilderAddResource() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Builder Add Resource" }
+        assertNotNull("Builder Add Resource test should exist", result)
+        assertTrue("Builder Add Resource test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testBuilderAddIngredient() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Builder Add Ingredient" }
+        assertNotNull("Builder Add Ingredient test should exist", result)
+        assertTrue("Builder Add Ingredient test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testBuilderFromArchive() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Builder from Archive" }
+        assertNotNull("Builder from Archive test should exist", result)
+        assertTrue("Builder from Archive test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testReaderWithManifestData() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Reader with Manifest Data" }
+        assertNotNull("Reader with Manifest Data test should exist", result)
+        assertTrue("Reader with Manifest Data test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testSignerWithCallback() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Signer with Callback" }
+        assertNotNull("Signer with Callback test should exist", result)
+        assertTrue("Signer with Callback test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testFileOperationsWithDataDirectory() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "File Operations with Data Directory" }
+        assertNotNull("File Operations test should exist", result)
+        assertTrue("File Operations test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testWriteOnlyStreams() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Write-Only Streams" }
+        assertNotNull("Write-Only Streams test should exist", result)
+        assertTrue("Write-Only Streams test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testCustomStreamCallbacks() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Custom Stream Callbacks" }
+        assertNotNull("Custom Stream Callbacks test should exist", result)
+        assertTrue("Custom Stream Callbacks test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testStreamFileOptions() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Stream File Options" }
+        assertNotNull("Stream File Options test should exist", result)
+        assertTrue("Stream File Options test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testWebServiceSigning() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Web Service Real Signing & Verification" }
+        assertNotNull("Web Service Signing test should exist", result)
+        assertTrue("Web Service Signing test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testHardwareSignerCreation() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Hardware Signer Creation" }
+        assertNotNull("Hardware Signer test should exist", result)
+        assertTrue("Hardware Signer test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testStrongBoxSignerCreation() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "StrongBox Signer Creation" }
+        assertNotNull("StrongBox Signer test should exist", result)
+        assertTrue("StrongBox Signer test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testSigningAlgorithms() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Signing Algorithm Tests" }
+        assertNotNull("Signing Algorithm test should exist", result)
+        assertTrue("Signing Algorithm test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testSignerReserveSize() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Signer Reserve Size" }
+        assertNotNull("Signer Reserve Size test should exist", result)
+        assertTrue("Signer Reserve Size test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testReaderResourceErrorHandling() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Reader Resource Error Handling" }
+        assertNotNull("Reader Resource Error test should exist", result)
+        assertTrue("Reader Resource Error test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testErrorEnumCoverage() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Error Enum Coverage" }
+        assertNotNull("Error Enum Coverage test should exist", result)
+        assertTrue("Error Enum Coverage test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    /**
+     * Run all tests and verify none failed.
+     * This is useful for a quick overall health check.
+     */
+    @Test
+    fun testAllTestsPass() = runBlocking {
+        val results = testSuite.runAllTests()
+        val failedTests = results.filter { !it.success }
         
-        val reader = C2PAReader.fromStream("image/jpeg", stream)
-        if (reader != null) {
-            val resourceStream = MemoryC2PAStream()
-            reader.resourceToStream("thumbnail", resourceStream)
-            reader.close()
+        if (failedTests.isNotEmpty()) {
+            val failureReport = failedTests.joinToString("\n\n") { test ->
+                "❌ ${test.name}:\n${test.message}\n${test.details ?: ""}"
+            }
+            fail("${failedTests.size} tests failed:\n\n$failureReport")
         }
         
-        stream.close()
-    }
-    
-    @Test
-    fun testBuilderRemoteURL() {
-        val manifestJson = """{
-            "claim_generator": "test_app/1.0",
-            "assertions": [
-                {
-                    "label": "c2pa.test",
-                    "data": {
-                        "test": true
-                    }
-                }
-            ]
-        }"""
-        
-        val builder = C2PABuilder.fromJson(manifestJson)
-        assertNotNull("Should create builder", builder)
-        
-        val result = builder!!.setRemoteUrl("https://example.com/manifest.c2pa")
-        assertEquals("Should set remote URL successfully", 0, result)
-        
-        builder.close()
-    }
-    
-    @Test
-    fun testBuilderAddResource() {
-        val manifestJson = """{
-            "claim_generator": "test_app/1.0",
-            "assertions": [
-                {
-                    "label": "c2pa.test",
-                    "data": {
-                        "test": true
-                    }
-                }
-            ]
-        }"""
-        
-        val builder = C2PABuilder.fromJson(manifestJson)
-        assertNotNull("Should create builder", builder)
-        
-        val thumbnailData = createSimpleJPEGThumbnail()
-        val thumbnailStream = MemoryC2PAStream(thumbnailData)
-        
-        val result = builder!!.addResource("thumbnail", thumbnailStream)
-        assertEquals("Should add resource successfully", 0, result)
-        
-        builder.close()
-        thumbnailStream.close()
-    }
-    
-    @Test
-    fun testBuilderAddIngredient() {
-        val manifestJson = """{
-            "claim_generator": "test_app/1.0",
-            "assertions": [
-                {
-                    "label": "c2pa.test",
-                    "data": {
-                        "test": true
-                    }
-                }
-            ]
-        }"""
-        
-        val builder = C2PABuilder.fromJson(manifestJson)
-        assertNotNull("Should create builder", builder)
-        
-        val ingredientJson = """{
-            "title": "Test Ingredient",
-            "format": "image/jpeg"
-        }"""
-        
-        val ingredientImageData = getResourceAsBytes(R.raw.pexels_asadphoto_457882)
-        val ingredientStream = MemoryC2PAStream(ingredientImageData)
-        
-        val result = builder!!.addIngredientFromStream(ingredientJson, "image/jpeg", ingredientStream)
-        assertEquals("Should add ingredient successfully", 0, result)
-        
-        builder.close()
-        ingredientStream.close()
-    }
-    
-    @Test
-    fun testBuilderFromArchive() {
-        val manifestJson = """{
-            "claim_generator": "test_app/1.0",
-            "assertions": [
-                {
-                    "label": "c2pa.test",
-                    "data": {
-                        "test": true
-                    }
-                }
-            ]
-        }"""
-        
-        val originalBuilder = C2PABuilder.fromJson(manifestJson)
-        assertNotNull("Should create original builder", originalBuilder)
-        
-        originalBuilder!!.setNoEmbed()
-        val archiveStream = MemoryC2PAStream()
-        originalBuilder.toArchive(archiveStream)
-        originalBuilder.close()
-        
-        archiveStream.seek(0, SeekMode.START.value)
-        val newBuilder = C2PABuilder.fromArchive(archiveStream)
-        assertNotNull("Should create builder from archive", newBuilder)
-        
-        newBuilder?.close()
-        archiveStream.close()
-    }
-    
-    @Test
-    fun testReaderWithManifestData() {
-        val manifestData = ByteArray(1024) { it.toByte() }
-        val imageData = getResourceAsBytes(R.raw.pexels_asadphoto_457882)
-        val stream = MemoryC2PAStream(imageData)
-        
-        val reader = C2PAReader.fromManifestDataAndStream("image/jpeg", stream, manifestData)
-        
-        reader?.close()
-        stream.close()
-    }
-    
-    @Test
-    fun testSignerWithCallback() {
-        val certPem = getResourceAsString(R.raw.es256_certs)
-        
-        var callbackInvoked = false
-        val callback = object : SignCallback {
-            override fun sign(data: ByteArray): ByteArray? {
-                callbackInvoked = true
-                return ByteArray(64) { 0x42 }
-            }
-        }
-        
-        val signer = C2PASigner.fromCallback("es256", certPem, null, callback)
-        assertNotNull("Should create callback signer", signer)
-        
-        val reserveSize = signer!!.reserveSize()
-        assertTrue("Reserve size should be positive", reserveSize > 0)
-        
-        signer.close()
-    }
-    
-    @Test
-    fun testFileOperationsWithDataDir() {
-        val testImageFile = copyResourceToFile(R.raw.adobe_20220124_ci, "test_datadir.jpg")
-        val dataDir = File(context.cacheDir, "c2pa_data")
-        dataDir.mkdirs()
-        
-        val manifest = C2PA.readFile(testImageFile.absolutePath, dataDir.absolutePath)
-        val ingredient = C2PA.readIngredientFile(testImageFile.absolutePath, dataDir.absolutePath)
-        
-        testImageFile.delete()
-        dataDir.deleteRecursively()
-    }
-    
-    @Test
-    fun testWriteOnlyStreams() {
-        val manifestJson = """{
-            "claim_generator": "test_app/1.0",
-            "assertions": [
-                {
-                    "label": "c2pa.test",
-                    "data": {
-                        "test": true
-                    }
-                }
-            ]
-        }"""
-        
-        val builder = C2PABuilder.fromJson(manifestJson)
-        assertNotNull("Should create builder", builder)
-        
-        builder!!.setNoEmbed()
-        
-        val writeOnlyStream = MemoryC2PAStream()
-        val result = builder.toArchive(writeOnlyStream)
-        assertEquals("Should write to write-only stream", 0, result)
-        
-        val data = writeOnlyStream.getData()
-        assertTrue("Should have written data", data.isNotEmpty())
-        
-        builder.close()
-        writeOnlyStream.close()
-    }
-    
-    @Test
-    fun testCustomStreamCallbacks() {
-        var readCalled = false
-        var writeCalled = false
-        var seekCalled = false
-        var flushCalled = false
-        
-        val customStream = object : MemoryC2PAStream() {
-            override fun read(buffer: ByteArray, length: Long): Long {
-                readCalled = true
-                return super.read(buffer, length)
-            }
-            
-            override fun write(data: ByteArray, length: Long): Long {
-                writeCalled = true
-                return super.write(data, length)
-            }
-            
-            override fun seek(offset: Long, mode: Int): Long {
-                seekCalled = true
-                return super.seek(offset, mode)
-            }
-            
-            override fun flush(): Long {
-                flushCalled = true
-                return super.flush()
-            }
-        }
-        
-        customStream.write(ByteArray(10), 10)
-        customStream.seek(0, SeekMode.START.value)
-        customStream.read(ByteArray(5), 5)
-        customStream.flush()
-        
-        assertTrue("Read should be called", readCalled)
-        assertTrue("Write should be called", writeCalled)
-        assertTrue("Seek should be called", seekCalled)
-        assertTrue("Flush should be called", flushCalled)
-        
-        customStream.close()
-    }
-    
-    @Test
-    fun testStreamFileOptions() {
-        val tempFile = File.createTempFile("stream_test", ".dat", context.cacheDir)
-        tempFile.writeBytes(ByteArray(100) { it.toByte() })
-        
-        val preserveStream = FileC2PAStream(java.io.RandomAccessFile(tempFile, "r"))
-        val buffer = ByteArray(50)
-        val bytesRead = preserveStream.read(buffer, 50)
-        assertEquals("Should read data from existing file", 50, bytesRead)
-        preserveStream.close()
-        
-        val truncateStream = FileC2PAStream(java.io.RandomAccessFile(tempFile, "rw"))
-        truncateStream.write(ByteArray(10) { 0xFF.toByte() }, 10)
-        truncateStream.close()
-        
-        tempFile.delete()
-    }
-    
-    private fun getResourceAsBytes(resourceId: Int): ByteArray {
-        val inputStream = context.resources.openRawResource(resourceId)
-        val data = inputStream.readBytes()
-        inputStream.close()
-        return data
-    }
-    
-    private fun getResourceAsString(resourceId: Int): String {
-        val inputStream = context.resources.openRawResource(resourceId)
-        val text = inputStream.bufferedReader().use { it.readText() }
-        inputStream.close()
-        return text
-    }
-    
-    private fun copyResourceToFile(resourceId: Int, fileName: String): File {
-        val file = File(context.cacheDir, fileName)
-        val inputStream = context.resources.openRawResource(resourceId)
-        file.outputStream().use { output ->
-            inputStream.copyTo(output)
-        }
-        inputStream.close()
-        return file
-    }
-    
-    private fun createSimpleJPEGThumbnail(): ByteArray {
-        return byteArrayOf(
-            0xFF.toByte(), 0xD8.toByte(),
-            0xFF.toByte(), 0xE0.toByte(),
-            0x00, 0x10,
-            0x4A, 0x46, 0x49, 0x46,
-            0x00, 0x01,
-            0x01, 0x01,
-            0x00, 0x48,
-            0x00, 0x48,
-            0x00, 0x00,
-            0xFF.toByte(), 0xD9.toByte()
-        )
+        assertTrue("All ${results.size} tests should pass", failedTests.isEmpty())
     }
 }
