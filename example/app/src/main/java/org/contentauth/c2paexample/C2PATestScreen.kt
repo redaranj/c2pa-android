@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.Color
 
 @Composable
 fun C2PATestScreen(modifier: Modifier = Modifier) {
@@ -84,7 +85,7 @@ fun TestResultCard(result: C2PATestSuite.TestResult) {
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = if (result.success) {
-                MaterialTheme.colorScheme.primaryContainer
+                Color(0xFFE8F5E9) // Very light green color
             } else {
                 MaterialTheme.colorScheme.errorContainer
             }

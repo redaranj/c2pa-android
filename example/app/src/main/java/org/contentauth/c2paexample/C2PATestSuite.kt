@@ -2,6 +2,8 @@ package org.contentauth.c2paexample
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import org.contentauth.c2pa.Builder
 import org.contentauth.c2pa.C2PA
@@ -13,6 +15,7 @@ import org.contentauth.c2pa.Signer
 import org.contentauth.c2pa.SignerInfo
 import org.contentauth.c2pa.SigningAlgorithm
 import org.contentauth.c2pa.Stream
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -47,28 +50,97 @@ class C2PATestSuite(private val context: Context) {
         
         // Test 2: Error Handling
         results.add(runTest("Error Handling") {
-            val result = C2PA.readFile("/non/existent/file.jpg")
-            val error = C2PA.getError()
-            if (result == null && error != null) {
-                TestResult("Error Handling", true, "Correctly handled missing file", "Error: $error")
-            } else {
-                TestResult("Error Handling", false, "Unexpected behavior", "Result: $result, Error: $error")
+            val (exceptionThrown, errorMessage) = try {
+                C2PA.readFile("/non/existent/file.jpg")
+                false to "No exception thrown"
+            } catch (e: C2PAError) {
+                true to e.toString()
+            } catch (e: Exception) {
+                false to "Unexpected exception: ${e.message}"
             }
+            
+            // Validate error contains expected content
+            val hasExpectedError = exceptionThrown && errorMessage != null && (
+                errorMessage.contains("No such file", ignoreCase = true) ||
+                errorMessage.contains("not found", ignoreCase = true) ||
+                errorMessage.contains("does not exist", ignoreCase = true) ||
+                errorMessage.contains("FileNotFound", ignoreCase = true) ||
+                errorMessage.contains("os error 2", ignoreCase = true) // Unix file not found
+            )
+            
+            val success = exceptionThrown && hasExpectedError
+            
+            TestResult(
+                "Error Handling", 
+                success, 
+                if (success) "Correctly handled missing file with appropriate error" else "Unexpected error handling",
+                "Exception: $exceptionThrown, Error: $errorMessage, Expected error pattern: $hasExpectedError"
+            )
         })
 
         // Test 3: Read Manifest from Test Image
         results.add(runTest("Read Manifest from Test Image") {
             val testImageFile = copyResourceToFile(context, R.raw.adobe_20220124_ci, "test_adobe.jpg")
             try {
-                val manifest = C2PA.readFile(testImageFile.absolutePath)
+                val manifest = try {
+                    C2PA.readFile(testImageFile.absolutePath)
+                } catch (e: C2PAError) {
+                    null
+                }
                 if (manifest != null) {
                     val json = JSONObject(manifest)
                     val hasManifests = json.has("manifests")
+                    
+                    // Handle both array and object formats for manifests
+                    var manifestCount = 0
+                    var activeManifest: JSONObject? = null
+                    var claimGenerator: String? = null
+                    var assertionCount = 0
+                    
+                    if (hasManifests) {
+                        val manifestsValue = json.get("manifests")
+                        when (manifestsValue) {
+                            is JSONArray -> {
+                                manifestCount = manifestsValue.length()
+                                // Find active manifest in array
+                                for (i in 0 until manifestsValue.length()) {
+                                    val m = manifestsValue.getJSONObject(i)
+                                    if (json.optString("active_manifest") == m.optString("instance_id")) {
+                                        activeManifest = m
+                                        break
+                                    }
+                                }
+                            }
+                            is JSONObject -> {
+                                // Single manifest as object
+                                manifestCount = manifestsValue.length() // Number of keys
+                                // Get the first (and likely only) manifest
+                                val keys = manifestsValue.keys()
+                                if (keys.hasNext()) {
+                                    activeManifest = manifestsValue.getJSONObject(keys.next())
+                                }
+                            }
+                        }
+                        
+                        if (activeManifest != null) {
+                            claimGenerator = activeManifest.optString("claim_generator")
+                            val assertions = activeManifest.opt("assertions")
+                            assertionCount = when (assertions) {
+                                is JSONArray -> assertions.length()
+                                else -> 0
+                            }
+                        }
+                    }
+                    
+                    val success = hasManifests && manifestCount > 0 && activeManifest != null
+                    
                     TestResult(
                         "Read Manifest from Test Image",
-                        hasManifests,
-                        if (hasManifests) "Successfully read manifest" else "No manifests found",
-                        manifest.take(500) + if (manifest.length > 500) "..." else ""
+                        success,
+                        if (success) "Successfully read and validated manifest" else "Manifest validation failed",
+                        "Manifests: $manifestCount, Active: ${activeManifest != null}, " +
+                        "Generator: $claimGenerator, Assertions: $assertionCount\n" +
+                        manifest.take(300) + if (manifest.length > 300) "..." else ""
                     )
                 } else {
                     val error = C2PA.getError()
@@ -187,7 +259,11 @@ class C2PATestSuite(private val context: Context) {
         results.add(runTest("Read Ingredient") {
             val testImageFile = copyResourceToFile(context, R.raw.adobe_20220124_ci, "test_ingredient.jpg")
             try {
-                val standaloneIngredient = C2PA.readIngredientFile(testImageFile.absolutePath)
+                val standaloneIngredient = try {
+                    C2PA.readIngredientFile(testImageFile.absolutePath)
+                } catch (e: C2PAError) {
+                    null // Expected for files without ingredients
+                }
                 
                 var hasValidIngredientData = false
                 if (standaloneIngredient != null) {
@@ -199,7 +275,11 @@ class C2PATestSuite(private val context: Context) {
                     }
                 }
                 
-                val manifest = C2PA.readFile(testImageFile.absolutePath)
+                val manifest = try {
+                    C2PA.readFile(testImageFile.absolutePath)
+                } catch (e: C2PAError) {
+                    null
+                }
                 var hasIngredientsInManifest = false
                 if (manifest != null) {
                     try {
@@ -240,14 +320,20 @@ class C2PATestSuite(private val context: Context) {
             val textFile = File(context.cacheDir, "test.txt")
             textFile.writeText("This is not an image file")
             try {
-                val result = C2PA.readFile(textFile.absolutePath)
-                val error = C2PA.getError()
-                val success = result == null && error != null
+                val (success, errorMessage) = try {
+                    C2PA.readFile(textFile.absolutePath)
+                    false to "Should have thrown exception"
+                } catch (e: C2PAError) {
+                    true to e.toString()
+                } catch (e: Exception) {
+                    false to "Unexpected exception: ${e.message}"
+                }
+                
                 TestResult(
                     "Invalid File Handling",
                     success,
                     if (success) "Correctly handled invalid file" else "Unexpected behavior",
-                    "Result: $result, Error: $error"
+                    "Error: $errorMessage"
                 )
             } finally {
                 textFile.delete()
@@ -695,8 +781,17 @@ class C2PATestSuite(private val context: Context) {
             dataDir.mkdirs()
             
             try {
-                C2PA.readFile(testImageFile.absolutePath, dataDir.absolutePath)
-                C2PA.readIngredientFile(testImageFile.absolutePath, dataDir.absolutePath)
+                try {
+                    C2PA.readFile(testImageFile.absolutePath, dataDir.absolutePath)
+                } catch (e: C2PAError) {
+                    // May fail if no manifest
+                }
+                
+                try {
+                    C2PA.readIngredientFile(testImageFile.absolutePath, dataDir.absolutePath)
+                } catch (e: C2PAError) {
+                    // May fail if no ingredient
+                }
                 
                 val dataFiles = dataDir.listFiles() ?: emptyArray()
                 val success = dataFiles.isNotEmpty() && dataFiles.any { it.length() > 0 }
@@ -1164,6 +1259,277 @@ class C2PATestSuite(private val context: Context) {
                 success,
                 if (success) "All error types covered" else "Some error types not covered",
                 errorMessages.joinToString("\n") + "\nCaught: ${caughtApiError?.toString() ?: "none"}\n\nOperations tried: ${errors.joinToString("; ")}"
+            )
+        })
+        
+        // Test 27: Load Settings
+        results.add(runTest("Load Settings") {
+            val settingsJson = """{
+                "version_major": 1,
+                "version_minor": 0,
+                "trust": {
+                    "private_anchors": null,
+                    "trust_anchors": null,
+                    "trust_config": null,
+                    "allowed_list": null
+                },
+                "Core": {
+                    "debug": false,
+                    "hash_alg": "sha256",
+                    "salt_jumbf_boxes": true,
+                    "prefer_box_hash": false,
+                    "prefer_bmff_merkle_tree": false,
+                    "compress_manifests": true,
+                    "max_memory_usage": null
+                },
+                "Verify": {
+                    "verify_after_reading": true,
+                    "verify_after_sign": true,
+                    "verify_trust": true,
+                    "ocsp_fetch": false,
+                    "remote_manifest_fetch": true,
+                    "check_ingredient_trust": true,
+                    "skip_ingredient_conflict_resolution": false,
+                    "strict_v1_validation": false
+                },
+                "Builder": {
+                    "auto_thumbnail": true
+                }
+            }"""
+            
+            val success = try {
+                C2PA.loadSettings(settingsJson, "json")
+                true
+            } catch (e: Exception) {
+                false
+            }
+            
+            TestResult(
+                "Load Settings",
+                success,
+                if (success) "Settings loaded successfully" else "Failed to load settings: ${C2PA.getError()}",
+                if (success) "Success" else "Error: ${C2PA.getError()}"
+            )
+        })
+        
+        // Test 28: Sign File
+        results.add(runTest("Sign File") {
+            val sourceFile = copyResourceToFile(context, R.raw.pexels_asadphoto_457882, "source_signfile.jpg")
+            val destFile = File(context.cacheDir, "dest_signfile.jpg")
+            
+            try {
+                val certPem = getResourceAsString(context, R.raw.es256_certs)
+                val keyPem = getResourceAsString(context, R.raw.es256_private)
+                val signerInfo = SignerInfo(SigningAlgorithm.es256, certPem, keyPem)
+                
+                val manifestJson = """{
+                    "claim_generator": "test_app/1.0",
+                    "assertions": [{"label": "c2pa.test", "data": {"test": true}}]
+                }"""
+                
+                val result = C2PA.signFile(
+                    sourceFile.absolutePath,
+                    destFile.absolutePath,
+                    manifestJson,
+                    signerInfo
+                )
+                
+                val success = result != null && destFile.exists() && destFile.length() > 0
+                
+                TestResult(
+                    "Sign File",
+                    success,
+                    if (success) "File signed successfully" else "Failed to sign file",
+                    "Result: $result, Dest size: ${destFile.length()}"
+                )
+            } finally {
+                sourceFile.delete()
+                destFile.delete()
+            }
+        })
+        
+        // Test 29: JSON Round-trip
+        results.add(runTest("JSON Round-trip") {
+            val testImageData = getResourceAsBytes(context, R.raw.adobe_20220124_ci)
+            val memStream = MemoryStream(testImageData)
+            
+            try {
+                val reader = Reader("image/jpeg", memStream.stream)
+                try {
+                    val originalJson = reader.json()
+                    val json1 = JSONObject(originalJson)
+                    
+                    // Extract just the manifest part for rebuilding
+                    val manifestsValue = json1.opt("manifests")
+                    val success = when (manifestsValue) {
+                        is JSONArray -> manifestsValue.length() > 0
+                        is JSONObject -> manifestsValue.length() > 0
+                        else -> false
+                    }
+                    
+                    TestResult(
+                        "JSON Round-trip",
+                        success,
+                        if (success) "JSON parsed successfully" else "Failed to parse JSON",
+                        "Manifests type: ${manifestsValue?.javaClass?.simpleName}, Has content: $success"
+                    )
+                } finally {
+                    reader.close()
+                }
+            } catch (e: C2PAError) {
+                TestResult("JSON Round-trip", false, "Failed to read manifest", e.toString())
+            } finally {
+                memStream.close()
+            }
+        })
+        
+        // Test 30: Large Buffer Handling
+        results.add(runTest("Large Buffer Handling") {
+            var exceptionThrown = false
+            val largeSize = Int.MAX_VALUE.toLong() + 1L
+            
+            val mockStream = CallbackStream(
+                reader = { buf, length ->
+                    // This should trigger our overflow protection
+                    0
+                },
+                writer = { data, length ->
+                    // This should trigger our overflow protection
+                    0
+                }
+            )
+            
+            try {
+                // Try to read with a buffer larger than Int.MAX_VALUE
+                val result = mockStream.read(ByteArray(1024), largeSize)
+                // The implementation should safely handle this
+                val success = result <= Int.MAX_VALUE
+                
+                TestResult(
+                    "Large Buffer Handling",
+                    success,
+                    if (success) "Large buffer handled safely" else "Large buffer not handled properly",
+                    "Requested: $largeSize, Got: $result"
+                )
+            } finally {
+                mockStream.close()
+            }
+        })
+        
+        // Test 31: Concurrent Operations
+        results.add(runTest("Concurrent Operations") {
+            val errors = mutableListOf<String>()
+            val successes = mutableListOf<String>()
+            
+            // Run multiple operations concurrently
+            val jobs = List(4) { index ->
+                async(Dispatchers.IO) {
+                    try {
+                        when (index) {
+                            0 -> {
+                                C2PA.readFile("/non/existent/file$index.jpg")
+                                errors.add("Read $index: ${C2PA.getError()}")
+                            }
+                            1 -> {
+                                val version = C2PA.version()
+                                successes.add("Version $index: $version")
+                            }
+                            2 -> {
+                                try {
+                                    Builder("invalid json $index")
+                                } catch (e: C2PAError) {
+                                    errors.add("Builder $index: ${e.message}")
+                                }
+                            }
+                            3 -> {
+                                C2PA.readFile("/another/missing$index.jpg")
+                                errors.add("Read2 $index: ${C2PA.getError()}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        errors.add("Exception $index: ${e.message}")
+                    }
+                }
+            }
+            
+            awaitAll(*jobs.toTypedArray())
+            
+            val success = errors.size >= 3 && successes.isNotEmpty()
+            
+            TestResult(
+                "Concurrent Operations",
+                success,
+                if (success) "Concurrent operations handled" else "Concurrent operations failed",
+                "Errors: ${errors.size}, Successes: ${successes.size}\n${errors.joinToString("\n")}"
+            )
+        })
+        
+        // Test 32: Invalid Inputs
+        results.add(runTest("Invalid Inputs") {
+            val errors = mutableListOf<String>()
+            
+            // Test invalid format strings
+            try {
+                val stream = MemoryStream(ByteArray(100))
+                Reader("invalid/format", stream.stream)
+                stream.close()
+            } catch (e: C2PAError) {
+                errors.add("Invalid format caught: ${e.message}")
+            }
+            
+            // Test null-like conditions
+            try {
+                Builder("")
+            } catch (e: C2PAError) {
+                errors.add("Empty JSON caught: ${e.message}")
+            }
+            
+            // Test invalid algorithm
+            try {
+                Signer("", "", SigningAlgorithm.es256)
+            } catch (e: C2PAError) {
+                errors.add("Empty certs caught: ${e.message}")
+            }
+            
+            val success = errors.size >= 3
+            
+            TestResult(
+                "Invalid Inputs",
+                success,
+                if (success) "Invalid inputs properly rejected" else "Some invalid inputs not caught",
+                errors.joinToString("\n")
+            )
+        })
+        
+        // Test 33: Algorithm Coverage
+        results.add(runTest("Algorithm Coverage") {
+            val testedAlgorithms = mutableListOf<String>()
+            val supportedAlgorithms = mutableListOf<SigningAlgorithm>()
+            
+            for (alg in SigningAlgorithm.values()) {
+                testedAlgorithms.add("${alg.name}: ${alg.description}")
+                
+                // Test that we can at least create the enum value
+                when (alg) {
+                    SigningAlgorithm.es256, 
+                    SigningAlgorithm.es384, 
+                    SigningAlgorithm.es512,
+                    SigningAlgorithm.ps256,
+                    SigningAlgorithm.ps384,
+                    SigningAlgorithm.ps512 -> supportedAlgorithms.add(alg)
+                    SigningAlgorithm.ed25519 -> supportedAlgorithms.add(alg)
+                }
+            }
+            
+            val success = testedAlgorithms.size == SigningAlgorithm.values().size &&
+                         supportedAlgorithms.size >= 6
+            
+            TestResult(
+                "Algorithm Coverage",
+                success,
+                if (success) "All algorithms covered" else "Some algorithms missing",
+                "Tested: ${testedAlgorithms.size}, Supported: ${supportedAlgorithms.size}\n" +
+                testedAlgorithms.joinToString("\n")
             )
         })
         

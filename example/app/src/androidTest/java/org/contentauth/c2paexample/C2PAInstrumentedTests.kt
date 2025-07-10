@@ -226,22 +226,60 @@ class C2PAInstrumentedTests {
         assertTrue("Error Enum Coverage test should pass: ${result?.message}", result?.success == true)
     }
     
-    /**
-     * Run all tests and verify none failed.
-     * This is useful for a quick overall health check.
-     */
     @Test
-    fun testAllTestsPass() = runBlocking {
+    fun testLoadSettings() = runBlocking {
         val results = testSuite.runAllTests()
-        val failedTests = results.filter { !it.success }
-        
-        if (failedTests.isNotEmpty()) {
-            val failureReport = failedTests.joinToString("\n\n") { test ->
-                "❌ ${test.name}:\n${test.message}\n${test.details ?: ""}"
-            }
-            fail("${failedTests.size} tests failed:\n\n$failureReport")
-        }
-        
-        assertTrue("All ${results.size} tests should pass", failedTests.isEmpty())
+        val result = results.find { it.name == "Load Settings" }
+        assertNotNull("Load Settings test should exist", result)
+        assertTrue("Load Settings test should pass: ${result?.message}", result?.success == true)
     }
+    
+    @Test
+    fun testSignFile() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Sign File" }
+        assertNotNull("Sign File test should exist", result)
+        assertTrue("Sign File test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testJsonRoundTrip() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "JSON Round-trip" }
+        assertNotNull("JSON Round-trip test should exist", result)
+        assertTrue("JSON Round-trip test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testLargeBufferHandling() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Large Buffer Handling" }
+        assertNotNull("Large Buffer Handling test should exist", result)
+        assertTrue("Large Buffer Handling test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testConcurrentOperations() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Concurrent Operations" }
+        assertNotNull("Concurrent Operations test should exist", result)
+        assertTrue("Concurrent Operations test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testInvalidInputs() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Invalid Inputs" }
+        assertNotNull("Invalid Inputs test should exist", result)
+        assertTrue("Invalid Inputs test should pass: ${result?.message}", result?.success == true)
+    }
+    
+    @Test
+    fun testAlgorithmCoverage() = runBlocking {
+        val results = testSuite.runAllTests()
+        val result = results.find { it.name == "Algorithm Coverage" }
+        assertNotNull("Algorithm Coverage test should exist", result)
+        assertTrue("Algorithm Coverage test should pass: ${result?.message}", result?.success == true)
+    }
+    
 }

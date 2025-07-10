@@ -73,37 +73,142 @@ object C2PA {
      * Load settings from a string
      */
     @JvmStatic
-    external fun loadSettings(settings: String, format: String): Int
+    private external fun loadSettingsNative(settings: String, format: String): Int
+    
+    /**
+     * Load settings from a string
+     */
+    @JvmStatic
+    @Throws(C2PAError::class)
+    fun loadSettings(settings: String, format: String) {
+        try {
+            val result = loadSettingsNative(settings, format)
+            if (result < 0) {
+                throw C2PAError.api(getError() ?: "Failed to load settings")
+            }
+        } catch (e: IllegalArgumentException) {
+            throw C2PAError.api(e.message ?: "Invalid arguments")
+        } catch (e: RuntimeException) {
+            val error = getError()
+            if (error != null) {
+                throw C2PAError.api(error)
+            }
+            throw C2PAError.api(e.message ?: "Runtime error")
+        }
+    }
 
     /**
      * Read a manifest store from a file
      */
     @JvmStatic
-    external fun readFile(path: String, dataDir: String? = null): String?
+    private external fun readFileNative(path: String, dataDir: String? = null): String?
+    
+    /**
+     * Read a manifest store from a file
+     */
+    @JvmStatic
+    @Throws(C2PAError::class)
+    fun readFile(path: String, dataDir: String? = null): String {
+        return try {
+            readFileNative(path, dataDir) ?: throw C2PAError.api(getError() ?: "Failed to read file")
+        } catch (e: IllegalArgumentException) {
+            throw C2PAError.api(e.message ?: "Invalid arguments")
+        } catch (e: RuntimeException) {
+            val error = getError()
+            if (error != null) {
+                throw C2PAError.api(error)
+            }
+            throw C2PAError.api(e.message ?: "Runtime error")
+        }
+    }
 
     /**
      * Read an ingredient from a file
      */
     @JvmStatic
-    external fun readIngredientFile(path: String, dataDir: String? = null): String?
+    private external fun readIngredientFileNative(path: String, dataDir: String? = null): String?
+    
+    /**
+     * Read an ingredient from a file
+     */
+    @JvmStatic
+    @Throws(C2PAError::class)
+    fun readIngredientFile(path: String, dataDir: String? = null): String {
+        return try {
+            readIngredientFileNative(path, dataDir) ?: throw C2PAError.api(getError() ?: "Failed to read ingredient file")
+        } catch (e: IllegalArgumentException) {
+            throw C2PAError.api(e.message ?: "Invalid arguments")
+        } catch (e: RuntimeException) {
+            val error = getError()
+            if (error != null) {
+                throw C2PAError.api(error)
+            }
+            throw C2PAError.api(e.message ?: "Runtime error")
+        }
+    }
 
     /**
      * Sign a file with a manifest
      */
     @JvmStatic
-    external fun signFile(
+    private external fun signFileNative(
         sourcePath: String,
         destPath: String,
         manifest: String,
         signerInfo: SignerInfo,
         dataDir: String? = null
     ): String?
+    
+    /**
+     * Sign a file with a manifest
+     */
+    @JvmStatic
+    @Throws(C2PAError::class)
+    fun signFile(
+        sourcePath: String,
+        destPath: String,
+        manifest: String,
+        signerInfo: SignerInfo,
+        dataDir: String? = null
+    ): String {
+        return try {
+            signFileNative(sourcePath, destPath, manifest, signerInfo, dataDir)
+                ?: throw C2PAError.api(getError() ?: "Failed to sign file")
+        } catch (e: IllegalArgumentException) {
+            throw C2PAError.api(e.message ?: "Invalid arguments")
+        } catch (e: RuntimeException) {
+            val error = getError()
+            if (error != null) {
+                throw C2PAError.api(error)
+            }
+            throw C2PAError.api(e.message ?: "Runtime error")
+        }
+    }
 
     /**
      * Sign data using Ed25519
      */
     @JvmStatic
-    external fun ed25519Sign(data: ByteArray, privateKey: String): ByteArray?
+    private external fun ed25519SignNative(data: ByteArray, privateKey: String): ByteArray?
+    
+    /**
+     * Sign data using Ed25519
+     */
+    @JvmStatic
+    @Throws(C2PAError::class)
+    fun ed25519Sign(data: ByteArray, privateKey: String): ByteArray {
+        return try {
+            ed25519SignNative(data, privateKey) ?: throw C2PAError.api(getError() ?: "Failed to sign with Ed25519")
+        } catch (e: IllegalArgumentException) {
+            throw C2PAError.api(e.message ?: "Invalid arguments")
+        } catch (e: RuntimeException) {
+            val error = getError()
+            if (error != null) {
+                throw C2PAError.api(error)
+            }
+            throw C2PAError.api(e.message ?: "Runtime error")
+        }
+    }
 
     /**
      * Read a manifest from a file (convenience method)
@@ -112,7 +217,6 @@ object C2PA {
     @Throws(C2PAError::class)
     fun read(from: File, resourcesDir: File? = null): String {
         return readFile(from.absolutePath, resourcesDir?.absolutePath)
-            ?: throw C2PAError.api(getError() ?: "Unknown error")
     }
 
     /**
@@ -127,16 +231,13 @@ object C2PA {
         signer: SignerInfo,
         resourcesDir: File? = null
     ) {
-        val result = signFile(
+        signFile(
             source.absolutePath,
             destination.absolutePath,
             manifest,
             signer,
             resourcesDir?.absolutePath
         )
-        if (result == null) {
-            throw C2PAError.api(getError() ?: "Signing failed")
-        }
     }
 }
 
@@ -251,11 +352,22 @@ class Reader private constructor(private var ptr: Long) : Closeable {
         @JvmStatic
         @Throws(C2PAError::class)
         operator fun invoke(format: String, stream: Stream): Reader {
-            val handle = fromStreamNative(format, stream.rawPtr)
-            if (handle == 0L) {
-                throw C2PAError.api(C2PA.getError() ?: "Unknown error")
+            return try {
+                val handle = fromStreamNative(format, stream.rawPtr)
+                if (handle == 0L) {
+                    throw C2PAError.api(C2PA.getError() ?: "Unknown error")
+                }
+                Reader(handle)
+            } catch (e: IllegalArgumentException) {
+                throw C2PAError.api(e.message ?: "Invalid arguments")
+            } catch (e: RuntimeException) {
+                // Check if this is a C2PA error by looking for an error message
+                val error = C2PA.getError()
+                if (error != null) {
+                    throw C2PAError.api(error)
+                }
+                throw C2PAError.api(e.message ?: "Runtime error")
             }
-            return Reader(handle)
         }
 
         /**
@@ -264,11 +376,21 @@ class Reader private constructor(private var ptr: Long) : Closeable {
         @JvmStatic
         @Throws(C2PAError::class)
         operator fun invoke(format: String, stream: Stream, manifest: ByteArray): Reader {
-            val handle = fromManifestDataAndStreamNative(format, stream.rawPtr, manifest)
-            if (handle == 0L) {
-                throw C2PAError.api(C2PA.getError() ?: "Unknown error")
+            return try {
+                val handle = fromManifestDataAndStreamNative(format, stream.rawPtr, manifest)
+                if (handle == 0L) {
+                    throw C2PAError.api(C2PA.getError() ?: "Unknown error")
+                }
+                Reader(handle)
+            } catch (e: IllegalArgumentException) {
+                throw C2PAError.api(e.message ?: "Invalid arguments")
+            } catch (e: RuntimeException) {
+                val error = C2PA.getError()
+                if (error != null) {
+                    throw C2PAError.api(error)
+                }
+                throw C2PAError.api(e.message ?: "Runtime error")
             }
-            return Reader(handle)
         }
 
         @JvmStatic
@@ -336,11 +458,21 @@ class Builder private constructor(private var ptr: Long) : Closeable {
         @JvmStatic
         @Throws(C2PAError::class)
         operator fun invoke(manifestJSON: String): Builder {
-            val handle = nativeFromJson(manifestJSON)
-            if (handle == 0L) {
-                throw C2PAError.api(C2PA.getError() ?: "Failed to create builder from JSON")
+            return try {
+                val handle = nativeFromJson(manifestJSON)
+                if (handle == 0L) {
+                    throw C2PAError.api(C2PA.getError() ?: "Failed to create builder from JSON")
+                }
+                Builder(handle)
+            } catch (e: IllegalArgumentException) {
+                throw C2PAError.api(e.message ?: "Invalid arguments")
+            } catch (e: RuntimeException) {
+                val error = C2PA.getError()
+                if (error != null) {
+                    throw C2PAError.api(error)
+                }
+                throw C2PAError.api(e.message ?: "Runtime error")
             }
-            return Builder(handle)
         }
 
         /**
@@ -349,11 +481,21 @@ class Builder private constructor(private var ptr: Long) : Closeable {
         @JvmStatic
         @Throws(C2PAError::class)
         operator fun invoke(archive: Stream): Builder {
-            val handle = nativeFromArchive(archive.rawPtr)
-            if (handle == 0L) {
-                throw C2PAError.api(C2PA.getError() ?: "Failed to create builder from archive")
+            return try {
+                val handle = nativeFromArchive(archive.rawPtr)
+                if (handle == 0L) {
+                    throw C2PAError.api(C2PA.getError() ?: "Failed to create builder from archive")
+                }
+                Builder(handle)
+            } catch (e: IllegalArgumentException) {
+                throw C2PAError.api(e.message ?: "Invalid arguments")
+            } catch (e: RuntimeException) {
+                val error = C2PA.getError()
+                if (error != null) {
+                    throw C2PAError.api(error)
+                }
+                throw C2PAError.api(e.message ?: "Runtime error")
             }
-            return Builder(handle)
         }
 
         @JvmStatic
@@ -527,11 +669,21 @@ class Signer private constructor(internal var ptr: Long) : Closeable {
         @JvmStatic
         @Throws(C2PAError::class)
         operator fun invoke(info: SignerInfo): Signer {
-            val handle = nativeFromInfo(info)
-            if (handle == 0L) {
-                throw C2PAError.api(C2PA.getError() ?: "Failed to create signer")
+            return try {
+                val handle = nativeFromInfo(info)
+                if (handle == 0L) {
+                    throw C2PAError.api(C2PA.getError() ?: "Failed to create signer")
+                }
+                Signer(handle)
+            } catch (e: IllegalArgumentException) {
+                throw C2PAError.api(e.message ?: "Invalid arguments")
+            } catch (e: RuntimeException) {
+                val error = C2PA.getError()
+                if (error != null) {
+                    throw C2PAError.api(error)
+                }
+                throw C2PAError.api(e.message ?: "Runtime error")
             }
-            return Signer(handle)
         }
 
         /**
@@ -545,14 +697,24 @@ class Signer private constructor(internal var ptr: Long) : Closeable {
             tsaURL: String? = null,
             sign: (ByteArray) -> ByteArray
         ): Signer {
-            val callback = object : SignCallback {
-                override fun sign(data: ByteArray): ByteArray = sign(data)
+            return try {
+                val callback = object : SignCallback {
+                    override fun sign(data: ByteArray): ByteArray = sign(data)
+                }
+                val handle = nativeFromCallback(algorithm.description, certificateChainPEM, tsaURL, callback)
+                if (handle == 0L) {
+                    throw C2PAError.api(C2PA.getError() ?: "Failed to create callback signer")
+                }
+                Signer(handle)
+            } catch (e: IllegalArgumentException) {
+                throw C2PAError.api(e.message ?: "Invalid arguments")
+            } catch (e: RuntimeException) {
+                val error = C2PA.getError()
+                if (error != null) {
+                    throw C2PAError.api(error)
+                }
+                throw C2PAError.api(e.message ?: "Runtime error")
             }
-            val handle = nativeFromCallback(algorithm.description, certificateChainPEM, tsaURL, callback)
-            if (handle == 0L) {
-                throw C2PAError.api(C2PA.getError() ?: "Failed to create callback signer")
-            }
-            return Signer(handle)
         }
 
         @JvmStatic
@@ -877,11 +1039,21 @@ object FormatUtils {
     @JvmStatic
     @Throws(C2PAError::class)
     fun formatEmbeddable(format: String, manifestBytes: ByteArray): ByteArray {
-        val result = formatEmbeddableNative(format, manifestBytes)
-        if (result == null) {
-            throw C2PAError.api(C2PA.getError() ?: "Failed to format embeddable")
+        return try {
+            val result = formatEmbeddableNative(format, manifestBytes)
+            if (result == null) {
+                throw C2PAError.api(C2PA.getError() ?: "Failed to format embeddable")
+            }
+            result
+        } catch (e: IllegalArgumentException) {
+            throw C2PAError.api(e.message ?: "Invalid arguments")
+        } catch (e: RuntimeException) {
+            val error = C2PA.getError()
+            if (error != null) {
+                throw C2PAError.api(error)
+            }
+            throw C2PAError.api(e.message ?: "Runtime error")
         }
-        return result
     }
 
     @JvmStatic

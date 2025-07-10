@@ -450,7 +450,7 @@ JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_getError(JNIEnv *env, j
     return result;
 }
 
-JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2PA_loadSettings(JNIEnv *env, jclass clazz, jstring settings, jstring format) {
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2PA_loadSettingsNative(JNIEnv *env, jclass clazz, jstring settings, jstring format) {
     const char *csettings = jstring_to_cstring(env, settings);
     const char *cformat = jstring_to_cstring(env, format);
     
@@ -462,7 +462,7 @@ JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2PA_loadSettings(JNIEnv *env, 
     return result;
 }
 
-JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_readFile(JNIEnv *env, jclass clazz, jstring path, jstring dataDir) {
+JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_readFileNative(JNIEnv *env, jclass clazz, jstring path, jstring dataDir) {
     const char *cpath = jstring_to_cstring(env, path);
     const char *cdataDir = jstring_to_cstring(env, dataDir);
     
@@ -476,7 +476,7 @@ JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_readFile(JNIEnv *env, j
     return jresult;
 }
 
-JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_readIngredientFile(JNIEnv *env, jclass clazz, jstring path, jstring dataDir) {
+JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_readIngredientFileNative(JNIEnv *env, jclass clazz, jstring path, jstring dataDir) {
     const char *cpath = jstring_to_cstring(env, path);
     const char *cdataDir = jstring_to_cstring(env, dataDir);
     
@@ -490,7 +490,7 @@ JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_readIngredientFile(JNIE
     return jresult;
 }
 
-JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_signFile(JNIEnv *env, jclass clazz, jstring sourcePath, jstring destPath, jstring manifest, jobject signerInfo, jstring dataDir) {
+JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_signFileNative(JNIEnv *env, jclass clazz, jstring sourcePath, jstring destPath, jstring manifest, jobject signerInfo, jstring dataDir) {
     if (sourcePath == NULL || destPath == NULL || manifest == NULL || signerInfo == NULL) {
         (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"), 
                          "Required parameters cannot be null");
@@ -1191,7 +1191,7 @@ JNIEXPORT void JNICALL Java_org_contentauth_c2pa_Signer_free(JNIEnv *env, jobjec
 }
 
 // Ed25519 signing
-JNIEXPORT jbyteArray JNICALL Java_org_contentauth_c2pa_C2PA_ed25519Sign(JNIEnv *env, jclass clazz, jbyteArray data, jstring privateKey) {
+JNIEXPORT jbyteArray JNICALL Java_org_contentauth_c2pa_C2PA_ed25519SignNative(JNIEnv *env, jclass clazz, jbyteArray data, jstring privateKey) {
     if (data == NULL || privateKey == NULL) {
         (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"), 
                          "Data and private key cannot be null");
