@@ -1,7 +1,6 @@
 package org.contentauth.c2paexample
 
 import java.security.KeyFactory
-import java.security.PrivateKey
 import java.security.Signature
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Base64
