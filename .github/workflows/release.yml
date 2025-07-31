@@ -1,6 +1,8 @@
 name: Release
 
 on:
+  push:
+    branches: [ chore/reorganize-repo ]
   workflow_dispatch:
     inputs:
       version:
@@ -16,10 +18,18 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
     
+    - name: Set version
+      run: |
+        if [[ "${{ github.event_name }}" == "push" ]]; then
+          echo "VERSION=0.0.1" >> $GITHUB_ENV
+        else
+          echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+        fi
+    
     - name: Validate version format
       run: |
         # Simple validation for version format
-        if [[ ! "${{ github.event.inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        if [[ ! "${{ env.VERSION }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           echo "::error::Version must be in format X.Y.Z (e.g., 1.0.0)"
           exit 1
         fi
@@ -31,12 +41,12 @@ jobs:
 
     - name: Create tag
       run: |
-        git tag ${{ github.event.inputs.version }}
-        git push origin ${{ github.event.inputs.version }}
+        git tag ${{ env.VERSION }}
+        git push origin ${{ env.VERSION }}
 
     - name: Display release information
       run: |
-        echo "Starting release process for version ${{ github.event.inputs.version }}"
+        echo "Starting release process for version ${{ env.VERSION }}"
         echo "This workflow will:"
         echo "1. Download pre-built Android libraries"
         echo "2. Build the Android AAR"
@@ -71,19 +81,19 @@ jobs:
       env:
         JAVA_HOME: ${{ steps.setup-java.outputs.path }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        CI_COMMIT_TAG: ${{ github.event.inputs.version }}
+        CI_COMMIT_TAG: ${{ env.VERSION }}
       run: |
         make publish
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ github.event.inputs.version }}
-        name: C2PA Android ${{ github.event.inputs.version }}
+        tag_name: ${{ env.VERSION }}
+        name: C2PA Android ${{ env.VERSION }}
         files: |
           library/build/outputs/aar/*.aar
         body: |
-          # C2PA Android Release ${{ github.event.inputs.version }}
+          # C2PA Android Release ${{ env.VERSION }}
 
           ## Android Integration
 
@@ -107,6 +117,6 @@ jobs:
 
           ## What's Changed
 
-          See the [commit history](https://github.com/${{ github.repository }}/compare/{{ previousTag }}...${{ github.event.inputs.version }}) for a full list of changes.
+          See the [commit history](https://github.com/${{ github.repository }}/compare/{{ previousTag }}...${{ env.VERSION }}) for a full list of changes.
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
