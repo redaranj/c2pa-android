@@ -82,6 +82,7 @@ jobs:
         JAVA_HOME: ${{ steps.setup-java.outputs.path }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         CI_COMMIT_TAG: ${{ env.VERSION }}
+        GITHUB_ORG: redaranj
       run: |
         make publish
 
