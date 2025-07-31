@@ -14,12 +14,9 @@ C2PA Android offers:
 
 ## Repository Structure
 
-- `/template` - Android library template with build configuration
-- `/src` - Kotlin wrapper source code and JNI bindings
-- `/example` - Example Android application
-- `/output` - Build output artifacts
-  - `/output/lib` - Built Android AAR library
-- `/build` - Temporary build files and downloaded binaries
+- `/library` - Android library module with C2PA Kotlin APIs and JNI bindings
+- `/test-app` - Test application with comprehensive test UI
+- `/example-app` - Example Android application (placeholder for future camera app)
 - `/Makefile` - Build system commands
 - `/.github/workflows` - GitHub Actions for CI/CD
 

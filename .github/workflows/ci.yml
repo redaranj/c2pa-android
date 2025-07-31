@@ -69,14 +69,14 @@ jobs:
         emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
         disable-animations: true
         script: |
-          cd example && chmod +x gradlew && ./gradlew connectedAndroidTest
+          ./gradlew :library:connectedAndroidTest
     
     - name: Upload test results
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: test-results-${{ matrix.api-level }}
-        path: example/app/build/reports/androidTests/
+        path: library/build/reports/androidTests/
 
   lint:
     runs-on: ubuntu-latest
@@ -98,14 +98,11 @@ jobs:
       run: make android
     
     - name: Run lint
-      run: |
-        cd example
-        chmod +x gradlew
-        ./gradlew lint
+      run: ./gradlew :library:lint
     
     - name: Upload lint results
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: lint-results
-        path: example/app/build/reports/lint-results-*.html
+        path: library/build/reports/lint-results-*.html
