@@ -1,4 +1,4 @@
-package org.contentauth.c2pa.testapp
+package org.contentauth.c2pa.test
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
@@ -24,10 +24,10 @@ import java.io.File
 /**
  * Shared test suite for C2PA functionality.
  * This class contains all the test logic that can be run from both:
- * - The UI (C2PATestScreen)
+ * - The UI (TestScreen)
  * - Instrumented tests
  */
-class C2PATestSuite(private val context: Context) {
+class TestSuite(private val context: Context) {
 
     data class TestResult(
         val name: String,

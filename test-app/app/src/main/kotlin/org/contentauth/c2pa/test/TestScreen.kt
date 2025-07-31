@@ -1,4 +1,4 @@
-package org.contentauth.c2pa.testapp
+package org.contentauth.c2pa.test
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,10 +31,10 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 
 @Composable
-fun C2PATestScreen(modifier: Modifier = Modifier) {
+fun TestScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    var testResults by remember { mutableStateOf(listOf<C2PATestSuite.TestResult>()) }
+    var testResults by remember { mutableStateOf(listOf<TestSuite.TestResult>()) }
     var isRunning by remember { mutableStateOf(false) }
     
     Column(
@@ -53,7 +53,7 @@ fun C2PATestScreen(modifier: Modifier = Modifier) {
             onClick = {
                 coroutineScope.launch {
                     isRunning = true
-                    val testSuite = C2PATestSuite(context)
+                    val testSuite = TestSuite(context)
                     testResults = testSuite.runAllTests()
                     isRunning = false
                 }
@@ -80,7 +80,7 @@ fun C2PATestScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun TestResultCard(result: C2PATestSuite.TestResult) {
+fun TestResultCard(result: TestSuite.TestResult) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(

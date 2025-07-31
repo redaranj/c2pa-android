@@ -1,4 +1,4 @@
-package org.contentauth.c2paexample.ui.theme
+package org.contentauth.c2pa.example.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle

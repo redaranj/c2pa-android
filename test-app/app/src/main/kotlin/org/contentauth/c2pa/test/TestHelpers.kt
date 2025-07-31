@@ -1,12 +1,11 @@
-package org.contentauth.c2pa.testapp
+package org.contentauth.c2pa.test
 
-import org.contentauth.c2pa.SeekMode
-import org.contentauth.c2pa.CallbackStream
-import org.contentauth.c2pa.Stream
+import org.contentauth.c2pa.*
 import java.io.ByteArrayOutputStream
 
 /**
  * Memory stream implementation using CallbackStream
+ * (Copied from library's InstrumentedTests.kt)
  */
 class MemoryStream {
     private val buffer = ByteArrayOutputStream()
@@ -79,26 +78,53 @@ class MemoryStream {
 }
 
 /**
+ * Mock signing service for Android testing (avoids socket permissions)
+ * (Copied from library's InstrumentedTests.kt)
+ */
+class MockSigningService(
+    private val signingFunction: (ByteArray) -> ByteArray
+) {
+    fun handleRequest(requestId: String, data: ByteArray): ByteArray {
+        // Simulate async processing
+        return signingFunction(data)
+    }
+    
+    companion object {
+        private val activeServices = mutableMapOf<String, MockSigningService>()
+        
+        fun register(url: String, service: MockSigningService) {
+            activeServices[url] = service
+        }
+        
+        fun unregister(url: String) {
+            activeServices.remove(url)
+        }
+        
+        fun getService(url: String): MockSigningService? {
+            return activeServices[url]
+        }
+    }
+}
+
+/**
  * Helper object for creating web service signers
  */
 object WebServiceSignerHelper {
     fun createWebServiceSigner(
         serviceUrl: String,
-        algorithm: org.contentauth.c2pa.SigningAlgorithm,
+        algorithm: SigningAlgorithm,
         certsPem: String,
         tsaUrl: String? = null
-    ): org.contentauth.c2pa.Signer {
-        // Check if this is a mock service URL
+    ): Signer {
+        // Use MockSigningService for the actual signing
         val mockService = MockSigningService.getService(serviceUrl)
-        if (mockService != null) {
-            // Return a callback signer that uses the mock service
-            return org.contentauth.c2pa.Signer.withCallback(algorithm, certsPem, tsaUrl) { data ->
-                mockService.handleRequest("test-request", data)
-            }
-        }
+            ?: throw IllegalStateException("No mock service registered for $serviceUrl")
         
-        // For real web service, you would implement actual HTTP calls here
-        // For now, throw an exception to indicate this is not implemented
-        throw UnsupportedOperationException("Real web service signing not implemented in test environment")
+        return Signer.withWebService(
+            algorithm = algorithm,
+            certificateChainPEM = certsPem,
+            tsaURL = tsaUrl,
+            signer = { data -> mockService.handleRequest("test", data) }
+        )
     }
 }

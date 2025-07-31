@@ -1,4 +1,4 @@
-package org.contentauth.c2pa.testapp
+package org.contentauth.c2pa.test
 
 import java.security.KeyFactory
 import java.security.Signature
@@ -8,6 +8,7 @@ import java.util.Base64
 /**
  * Simple signing helper for Android C2PA callback signers
  * Provides ECDSA signing with proper COSE format conversion
+ * (Copied from library's InstrumentedTests.kt)
  */
 object SigningHelper {
     

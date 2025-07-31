@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "org.contentauth.c2pa.testapp"
+    namespace = "org.contentauth.c2pa.test"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "org.contentauth.c2pa.testapp"
+        applicationId = "org.contentauth.c2pa.test"
         minSdk = 28
         targetSdk = 36
         versionCode = 1

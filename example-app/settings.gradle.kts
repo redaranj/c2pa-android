@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "C2PAExample"
+rootProject.name = "ExampleApp"
 include(":app")
  

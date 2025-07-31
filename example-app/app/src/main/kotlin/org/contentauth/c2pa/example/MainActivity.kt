@@ -1,4 +1,4 @@
-package org.contentauth.c2paexample
+package org.contentauth.c2pa.example
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -14,7 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
-import org.contentauth.c2paexample.ui.theme.C2PAExampleTheme
+import org.contentauth.c2pa.example.ui.theme.C2PATheme
 
 private const val TAG = "C2PAExample"
 
@@ -24,7 +24,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            C2PAExampleTheme {
+            C2PATheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     PlaceholderScreen(modifier = Modifier.padding(innerPadding))
                 }
