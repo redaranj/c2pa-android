@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, chore/reorganize-repo ]
   pull_request:
     branches: [ main ]
 
