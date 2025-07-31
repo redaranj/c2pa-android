@@ -29,7 +29,7 @@ jobs:
       uses: android-actions/setup-android@v3
     
     - name: Build AAR
-      run: make android
+      run: make library
     
     - name: Enable KVM
       run: |
@@ -105,7 +105,7 @@ jobs:
       uses: android-actions/setup-android@v3
     
     - name: Build AAR
-      run: make android
+      run: make library
     
     - name: Run lint
       run: ./gradlew :library:lint

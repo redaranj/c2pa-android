@@ -1,4 +1,4 @@
-.PHONY: all clean setup android android-gradle android-lib publish download-binaries download-android-binaries android-dev test coverage
+.PHONY: all clean setup library library-gradle publish download-binaries download-native-binaries library-dev tests coverage
 
 # GitHub Release Configuration
 GITHUB_ORG := contentauth
@@ -6,8 +6,7 @@ C2PA_VERSION := v0.56.2
 
 # Directories
 ROOT_DIR := $(shell pwd)
-BUILD_DIR := $(ROOT_DIR)/build
-DOWNLOAD_DIR := $(BUILD_DIR)/downloads
+DOWNLOAD_DIR := $(ROOT_DIR)/downloads
 LIBRARY_DIR := $(ROOT_DIR)/library
 
 # Android architectures
@@ -18,11 +17,10 @@ ANDROID_X86_TARGET := i686-linux-android
 ANDROID_X86_64_TARGET := x86_64-linux-android
 
 # Default target
-all: android
+all: library
 
 # Setup directories
 setup:
-	@mkdir -p $(BUILD_DIR)
 	@mkdir -p $(DOWNLOAD_DIR)
 	@for arch in $(ANDROID_ARCHS); do \
 		mkdir -p $(LIBRARY_DIR)/src/main/jniLibs/$$arch; \
@@ -39,9 +37,9 @@ define download_android_library
 endef
 
 # Download pre-built binaries from GitHub releases
-download-binaries: download-android-binaries
+download-binaries: download-native-binaries
 
-download-android-binaries: setup
+download-native-binaries: setup
 	@echo "Downloading pre-built binaries from $(GITHUB_ORG)/c2pa-rs release c2pa-$(C2PA_VERSION)..."
 	
 	# Download all Android libraries
@@ -59,12 +57,12 @@ download-android-binaries: setup
 	
 	@echo "Pre-built binaries downloaded successfully."
 
-# Complete Android build: setup, download binaries, and build
-android: setup download-android-binaries android-gradle
-	@echo "Complete Android build finished. AAR available at $(LIBRARY_DIR)/build/outputs/aar/"
+# Complete library build: setup, download binaries, and build
+library: setup download-native-binaries library-gradle
+	@echo "Complete library build finished. AAR available at $(LIBRARY_DIR)/build/outputs/aar/c2pa-release.aar"
 
-# Android emulator-only quick build (x86_64) - useful for faster development cycles
-android-dev: setup
+# Emulator-only quick build (x86_64) - useful for faster development cycles
+library-dev: setup
 	@echo "Setting up Android emulator-only build with downloaded x86_64 binary..."
 	# Download only x86_64 for faster development
 	@mkdir -p $(DOWNLOAD_DIR)
@@ -74,23 +72,17 @@ android-dev: setup
 	@unzip -q -o $(DOWNLOAD_DIR)/x86_64.zip -d $(DOWNLOAD_DIR)/x86_64
 	@cp $(DOWNLOAD_DIR)/x86_64/lib/libc2pa_c.so $(LIBRARY_DIR)/src/main/jniLibs/x86_64/
 	@./gradlew :library:assembleDebug
-	@echo "Android emulator-only library built"
+	@echo "Emulator-only library built"
 
 # Run Gradle tasks
-android-gradle:
+library-gradle:
 	@echo "Running Gradle build commands..."
 	@echo "Using ANDROID_HOME and JAVA_HOME from environment"
 	@./gradlew :library:clean :library:assembleRelease
 	@echo "Gradle build completed. AAR file available at $(LIBRARY_DIR)/build/outputs/aar/c2pa-release.aar"
 
-# Run tests
-test:
-	@echo "Running library unit tests..."
-	@./gradlew :library:testDebugUnitTest
-	@echo "Unit tests completed."
-
-# Run instrumented tests (requires connected device or emulator)
-test-instrumented:
+# Run tests (instrumented tests on device/emulator)
+tests:
 	@echo "Running library instrumented tests..."
 	@./gradlew :library:connectedDebugAndroidTest
 	@echo "Instrumented tests completed."
@@ -109,14 +101,14 @@ run-test-app:
 
 # Publish targets
 publish:
-	@echo "Publishing Android library to GitHub packages..."
+	@echo "Publishing library to GitHub packages..."
 	@./gradlew :library:publish
-	@echo "Android library published to GitHub packages at https://maven.pkg.github.com/$(GITHUB_ORG)/c2pa-android"
+	@echo "Library published to GitHub packages at https://maven.pkg.github.com/$(GITHUB_ORG)/c2pa-android"
 
 # Clean target
 clean:
 	@echo "Cleaning build artifacts..."
-	@rm -rf $(BUILD_DIR)
+	@rm -rf $(DOWNLOAD_DIR)
 	@./gradlew clean
 	@echo "Clean completed."
 
@@ -125,11 +117,10 @@ help:
 	@echo "Available targets:"
 	@echo "  setup                 - Create necessary directories"
 	@echo "  download-binaries     - Download pre-built binaries from GitHub releases"
-	@echo "  android               - Complete Android build (default)"
-	@echo "  android-dev           - Download x86_64 library only for emulator"
-	@echo "  android-gradle        - Run Gradle build to generate AAR file"
-	@echo "  test                  - Run library unit tests"
-	@echo "  test-instrumented     - Run library instrumented tests (requires device)"
+	@echo "  library               - Complete library build (default)"
+	@echo "  library-dev           - Download x86_64 library only for emulator"
+	@echo "  library-gradle        - Run Gradle build to generate AAR file"
+	@echo "  tests                 - Run library instrumented tests (requires device)"
 	@echo "  coverage              - Generate instrumented test coverage report (requires device)"
 	@echo "  run-test-app          - Install and run the test app"
 	@echo "  publish               - Publish library to GitHub packages"

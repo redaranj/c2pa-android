@@ -21,7 +21,7 @@ git clone https://github.com/contentauth/c2pa-android.git
 cd c2pa-android
 
 # Build the library
-make android
+make library
 
 # Run the test app
 make run-test-app
@@ -97,7 +97,7 @@ allprojects {
 
 For local development without using a released version:
 
-1. Build the Android library with `make android`
+1. Build the library with `make library`
 2. The AAR will be available at `library/build/outputs/aar/c2pa-release.aar`
 3. Add the AAR to your project:
 
@@ -225,14 +225,14 @@ try {
      export ANDROID_HOME=$HOME/Library/Android/sdk
      ```
 
-3. Build the Android library:
+3. Build the library:
 
    ```bash
-   # Complete build: setup, download binaries, package library, and build AAR
-   make android
+   # Complete build: setup, download binaries, and build AAR
+   make library
    
-   # For faster Android development (x86_64 emulator only)
-   make android-dev
+   # For faster development (x86_64 emulator only)
+   make library-dev
    ```
 
 4. Check built outputs:
@@ -251,16 +251,15 @@ The project includes a comprehensive Makefile with various targets:
 
 - `setup` - Create necessary directories
 - `download-binaries` - Download pre-built binaries from GitHub releases
-- `download-android-binaries` - Download pre-built Android binaries
-- `android` - Complete Android build: setup, download, package, and build AAR
-- `android-dev` - Download x86_64 library only for emulator (faster development)
-- `android-gradle` - Run Gradle build to generate AAR file
-- `test` - Run library unit tests
-- `test-instrumented` - Run library instrumented tests (requires device/emulator)
+- `download-native-binaries` - Download pre-built native binaries
+- `library` - Complete library build: setup, download, and build AAR
+- `library-dev` - Download x86_64 library only for emulator (faster development)
+- `library-gradle` - Run Gradle build to generate AAR file
+- `tests` - Run library instrumented tests (requires device/emulator)
 - `coverage` - Generate instrumented test coverage report
 - `run-test-app` - Install and run the test app
 - `publish` - Publish Android library to GitHub packages
-- `all` - Complete Android build (default, same as android)
+- `all` - Complete library build (default, same as library)
 - `clean` - Remove build artifacts
 - `help` - Show all available targets
 
@@ -325,18 +324,12 @@ When implementing callback signers for ECDSA algorithms (ES256, ES384, ES512), t
 
 ## Testing
 
-The project includes comprehensive tests to ensure reliability:
-
-### Unit Tests
-Run unit tests with:
-```bash
-make test
-```
+The project includes comprehensive instrumented tests that validate the C2PA functionality through the JNI bridge:
 
 ### Instrumented Tests
 Run instrumented tests on a connected device or emulator:
 ```bash
-make test-instrumented
+make tests
 ```
 
 ### Test Coverage

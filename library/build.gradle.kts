@@ -91,6 +91,11 @@ android {
     }
 }
 
+// Set the base name for the AAR file
+base {
+    archivesName.set("c2pa")
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")

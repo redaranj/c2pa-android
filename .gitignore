@@ -2,6 +2,7 @@
 .gradle/
 build/
 */build/
+downloads/
 gradle-app.setting
 !gradle-wrapper.jar
 .gradletasknamecache

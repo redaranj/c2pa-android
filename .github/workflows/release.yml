@@ -60,12 +60,12 @@ jobs:
       env:
         JAVA_HOME: ${{ steps.setup-java.outputs.path }}
       run: |
-        make android
+        make library
 
     - name: List AAR artifacts
       run: |
         echo "Built AAR files:"
-        find output/lib/c2pa/build/outputs/aar -name "*.aar" -type f
+        find library/build/outputs/aar -name "*.aar" -type f
 
     - name: Publish to GitHub Packages
       env:
@@ -81,7 +81,7 @@ jobs:
         tag_name: ${{ github.event.inputs.version }}
         name: C2PA Android ${{ github.event.inputs.version }}
         files: |
-          output/lib/c2pa/build/outputs/aar/*.aar
+          library/build/outputs/aar/*.aar
         body: |
           # C2PA Android Release ${{ github.event.inputs.version }}
 
