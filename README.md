@@ -11,17 +11,32 @@ C2PA Android offers:
 - Support for callback-based signing and web service signers
 - Stream-based operations for efficient memory usage
 - Pre-built binaries for fast development
+- Hardware security integration (Android Keystore, StrongBox)
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/contentauth/c2pa-android.git
+cd c2pa-android
+
+# Build the library
+make library
+
+# Run the test app
+make run-test-app
+```
 
 ## Repository Structure
 
-- `/template` - Android library template with build configuration
-- `/src` - Kotlin wrapper source code and JNI bindings
-- `/example` - Example Android application
-- `/output` - Build output artifacts
-  - `/output/lib` - Built Android AAR library
-- `/build` - Temporary build files and downloaded binaries
-- `/Makefile` - Build system commands
-- `/.github/workflows` - GitHub Actions for CI/CD
+- `/library` - Android library module with C2PA Kotlin APIs and JNI bindings
+  - `/src/main/kotlin` - Kotlin wrapper classes (C2PA.kt, HardwareSecurity.kt)
+  - `/src/main/jni` - JNI C implementation (c2pa_jni.c) and C2PA headers
+  - `/src/androidTest` - Instrumented tests for the library
+- `/test-app` - Test application with comprehensive test UI for running all C2PA tests
+- `/example-app` - Example Android application (placeholder for future camera app)
+- `/Makefile` - Build system commands for downloading binaries and building
+- `/.github/workflows` - GitHub Actions for CI/CD with integrated test coverage
 
 ## Requirements
 
@@ -68,7 +83,7 @@ allprojects {
         mavenCentral()
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/guardianproject/c2pa-android")
+            url = uri("https://maven.pkg.github.com/contentauth/c2pa-android")
             credentials {
                 username = System.getenv("GITHUB_USER") ?: project.findProperty("GITHUB_USER")
                 password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("GITHUB_TOKEN")
@@ -82,17 +97,17 @@ allprojects {
 
 For local development without using a released version:
 
-1. Build the Android library with `make android`
-2. Add the resulting library in `output/lib` to your project as a module:
+1. Build the library with `make library`
+2. The AAR will be available at `library/build/outputs/aar/c2pa-release.aar`
+3. Add the AAR to your project:
 
 ```gradle
-// In settings.gradle
-include ':app', ':c2pa'
-project(':c2pa').projectDir = new File(rootProject.projectDir, 'path/to/output/lib')
-
 // In app/build.gradle
 dependencies {
-    implementation project(':c2pa')
+    implementation files('path/to/c2pa-release.aar')
+    // Also add required dependencies
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'net.java.dev.jna:jna:5.13.0@aar'
 }
 ```
 
@@ -165,7 +180,6 @@ val callbackSigner = Signer.withCallback(
     tsaURL = null
 ) { data ->
     // Custom signing logic here
-    // Return signature bytes in raw R,S format for ECDSA
     myCustomSigningFunction(data)
 }
 
@@ -190,7 +204,7 @@ try {
 1. Clone this repository:
 
    ```bash
-   git clone https://github.com/guardianproject/c2pa-android.git
+   git clone https://github.com/contentauth/c2pa-android.git
    cd c2pa-android
    ```
 
@@ -210,24 +224,24 @@ try {
      export ANDROID_HOME=$HOME/Library/Android/sdk
      ```
 
-3. Build the Android library:
+3. Build the library:
 
    ```bash
-   # Complete build: setup, download binaries, package library, and build AAR
-   make android
+   # Complete build: setup, download binaries, and build AAR
+   make library
    
-   # For faster Android development (x86_64 emulator only)
-   make android-dev
+   # For faster development (x86_64 emulator only)
+   make library-dev
    ```
 
 4. Check built outputs:
 
    ```bash
-   # Android Library
-   open output/lib
+   # Android Library AAR
+   ls -la library/build/outputs/aar/
    
-   # Android Example App
-   open example
+   # Run test app with comprehensive test suite
+   make run-test-app
    ```
 
 ## Makefile Targets
@@ -236,13 +250,15 @@ The project includes a comprehensive Makefile with various targets:
 
 - `setup` - Create necessary directories
 - `download-binaries` - Download pre-built binaries from GitHub releases
-- `download-android-binaries` - Download pre-built Android binaries
-- `android` - Complete Android build: setup, download, package, and build AAR
-- `android-dev` - Download x86_64 library only for emulator (faster development)
-- `android-lib` - Package Android library
-- `android-gradle` - Run Gradle build to generate AAR file
-- `publish-android` - Publish Android library to GitHub packages
-- `all` - Complete Android build (default, same as android)
+- `download-native-binaries` - Download pre-built native binaries
+- `library` - Complete library build: setup, download, and build AAR
+- `library-dev` - Download x86_64 library only for emulator (faster development)
+- `library-gradle` - Run Gradle build to generate AAR file
+- `tests` - Run library instrumented tests (requires device/emulator)
+- `coverage` - Generate instrumented test coverage report
+- `run-test-app` - Install and run the test app
+- `publish` - Publish Android library to GitHub packages
+- `all` - Complete library build (default, same as library)
 - `clean` - Remove build artifacts
 - `help` - Show all available targets
 
@@ -265,9 +281,19 @@ The release process is automated through a single workflow:
    - Attaches the Android AAR artifact
    - Publishes documentation for integration
 
-## Example App
+## Applications
 
-For an example of how to use this library, see the example app in `/example` which demonstrates integration with Android apps.
+### Test App (`/test-app`)
+
+A comprehensive test application that runs all C2PA functionality tests with a visual UI:
+- Run all 33 tests covering manifest reading, writing, signing, and validation
+- Visual test results with success/failure indicators
+- Detailed error messages for debugging
+- Access via `make run-test-app` or open in Android Studio
+
+### Example App (`/example-app`)
+
+A placeholder application for future camera integration demonstrating C2PA usage in real-world scenarios.
 
 ## API Features
 
@@ -288,20 +314,37 @@ For an example of how to use this library, see the example app in `/example` whi
 3. **Web Service Signing** - Remote signing via HTTP endpoints
 4. **Android Keystore** - Hardware-backed key storage (future)
 
-### Important Notes for Callback Signers
 
-When implementing callback signers for ECDSA algorithms (ES256, ES384, ES512), the signature must be returned in raw R,S format, not DER format. The library expects:
-- ES256: 64 bytes (32 bytes R + 32 bytes S)
-- ES384: 96 bytes (48 bytes R + 48 bytes S) 
-- ES512: 132 bytes (66 bytes R + 66 bytes S)
+## Testing
+
+The project includes comprehensive instrumented tests that validate the C2PA functionality through the JNI bridge:
+
+### Instrumented Tests
+Run instrumented tests on a connected device or emulator:
+```bash
+make tests
+```
+
+### Test Coverage
+Generate test coverage reports:
+```bash
+make coverage
+```
+
+Coverage reports will be available at:
+- HTML: `library/build/reports/jacoco/jacocoInstrumentedTestReport/html/index.html`
+- XML: `library/build/reports/jacoco/jacocoInstrumentedTestReport/jacocoInstrumentedTestReport.xml`
+
+The project uses JaCoCo for coverage reporting. Coverage reports are generated during CI builds and stored as artifacts.
 
 ## JNI Implementation
 
 The Android library uses JNI (Java Native Interface) with enhanced memory safety:
 
-- C API headers: `template/c2pa/src/main/jni/c2pa.h`
-- JNI implementation: `src/c2pa_jni.c` (thread-safe, proper cleanup)
-- Kotlin wrapper: `src/C2PA.kt`
+- C API headers: `library/src/main/jni/c2pa.h`
+- JNI implementation: `library/src/main/jni/c2pa_jni.c` (thread-safe, proper cleanup)
+- Kotlin wrapper: `library/src/main/kotlin/org/contentauth/c2pa/C2PA.kt`
+- Hardware security: `library/src/main/kotlin/org/contentauth/c2pa/HardwareSecurity.kt`
 
 ## License
 
