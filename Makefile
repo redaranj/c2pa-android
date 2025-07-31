@@ -102,7 +102,7 @@ run-test-app:
 # Publish targets
 publish:
 	@echo "Publishing library to GitHub packages..."
-	@./gradlew :library:publish
+	@GITHUB_ORG=$(GITHUB_ORG) ./gradlew :library:publish
 	@echo "Library published to GitHub packages at https://maven.pkg.github.com/$(GITHUB_ORG)/c2pa-android"
 
 # Clean target
