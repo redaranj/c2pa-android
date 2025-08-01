@@ -29,7 +29,7 @@ jobs:
       uses: android-actions/setup-android@v3
     
     - name: Build AAR
-      run: make android
+      run: make library
     
     - name: Enable KVM
       run: |
@@ -58,7 +58,7 @@ jobs:
         disable-animations: false
         script: echo "Generated AVD snapshot for caching."
     
-    - name: Run instrumented tests
+    - name: Run instrumented tests with coverage
       uses: reactivecircus/android-emulator-runner@v2
       timeout-minutes: 20
       with:
@@ -69,14 +69,24 @@ jobs:
         emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
         disable-animations: true
         script: |
-          cd example && chmod +x gradlew && ./gradlew connectedAndroidTest
+          ./gradlew :library:createDebugCoverageReport
+          ./gradlew :library:jacocoInstrumentedTestReport
     
     - name: Upload test results
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: test-results-${{ matrix.api-level }}
-        path: example/app/build/reports/androidTests/
+        path: library/build/reports/androidTests/
+    
+    - name: Upload coverage reports as artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-reports-${{ matrix.api-level }}
+        path: |
+          library/build/reports/jacoco/jacocoInstrumentedTestReport/
+          library/build/reports/coverage/androidTest/debug/
 
   lint:
     runs-on: ubuntu-latest
@@ -95,17 +105,14 @@ jobs:
       uses: android-actions/setup-android@v3
     
     - name: Build AAR
-      run: make android
+      run: make library
     
     - name: Run lint
-      run: |
-        cd example
-        chmod +x gradlew
-        ./gradlew lint
+      run: ./gradlew :library:lint
     
     - name: Upload lint results
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: lint-results
-        path: example/app/build/reports/lint-results-*.html
+        path: library/build/reports/lint-results-*.html
