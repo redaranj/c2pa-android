@@ -176,11 +176,115 @@ publishing {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/${System.getenv("GITHUB_ORG") ?: "contentauth"}/c2pa-android")
+            url = uri("https://maven.pkg.github.com/contentauth/c2pa-android")
             credentials {
                 username = System.getenv("GITHUB_ACTOR")
                 password = System.getenv("GITHUB_TOKEN")
             }
         }
     }
+}
+
+// Native library download configuration
+val c2paVersion = project.properties["c2paVersion"] as String
+val architectures = mapOf(
+    "arm64-v8a" to "aarch64-linux-android",
+    "armeabi-v7a" to "armv7-linux-androideabi",
+    "x86" to "i686-linux-android",
+    "x86_64" to "x86_64-linux-android"
+)
+
+tasks.register("setupDirectories") {
+    doLast {
+        val jniLibsDir = file("src/main/jniLibs")
+        architectures.keys.forEach { arch ->
+            file("$jniLibsDir/$arch").mkdirs()
+        }
+        file("src/main/jni").mkdirs()
+    }
+}
+
+tasks.register("downloadNativeLibraries") {
+    dependsOn("setupDirectories")
+    
+    doLast {
+        println("Using C2PA version: $c2paVersion")
+        val downloadDir = file("${rootDir}/downloads")
+        downloadDir.mkdirs()
+        
+        var headerDownloaded = false
+        
+        architectures.forEach { (arch, target) ->
+            val libDir = file("src/main/jniLibs/$arch")
+            val soFile = file("$libDir/libc2pa_c.so")
+            
+            if (!soFile.exists()) {
+                println("Downloading C2PA library for $arch...")
+                
+                val zipFile = file("$downloadDir/$arch.zip")
+                val extractDir = file("$downloadDir/$arch")
+                
+                // Download the zip file
+                val url = "https://github.com/contentauth/c2pa-rs/releases/download/c2pa-$c2paVersion/c2pa-$c2paVersion-$target.zip"
+                println("Downloading from: $url")
+                ant.invokeMethod("get", mapOf("src" to url, "dest" to zipFile, "skipexisting" to "true"))
+                
+                // Extract the zip file
+                ant.invokeMethod("unzip", mapOf("src" to zipFile, "dest" to extractDir, "overwrite" to "true"))
+                
+                // Copy the .so file
+                file("$extractDir/lib/libc2pa_c.so").copyTo(soFile, overwrite = true)
+                
+                // Copy header file from first architecture
+                if (!headerDownloaded) {
+                    val headerFile = file("$extractDir/include/c2pa.h")
+                    if (headerFile.exists()) {
+                        val destHeader = file("src/main/jni/c2pa.h")
+                        headerFile.copyTo(destHeader, overwrite = true)
+                        
+                        // Patch the header file
+                        val content = destHeader.readText()
+                        val patchedContent = content.replace(
+                            "typedef struct C2paSigner C2paSigner;",
+                            "typedef struct C2paSigner { } C2paSigner;"
+                        )
+                        destHeader.writeText(patchedContent)
+                        
+                        headerDownloaded = true
+                        println("Patched c2pa.h header file")
+                    }
+                }
+            } else {
+                println("C2PA library for $arch already exists, skipping download")
+            }
+        }
+    }
+}
+
+// Hook into the build process - download libraries before compilation if they don't exist
+tasks.named("preBuild") {
+    dependsOn("downloadNativeLibraries")
+}
+
+// Clean downloaded native libraries
+tasks.register("cleanDownloadedLibraries") {
+    doLast {
+        // Remove downloaded libraries
+        architectures.keys.forEach { arch ->
+            file("src/main/jniLibs/$arch/libc2pa_c.so").delete()
+        }
+        
+        // Remove header file
+        file("src/main/jni/c2pa.h").delete()
+        
+        // Remove downloads directory
+        file("${rootDir}/downloads").deleteRecursively()
+        
+        println("Cleaned downloaded native libraries")
+    }
+}
+
+// Hook into clean task
+tasks.named("clean") {
+    dependsOn("cleanDownloadedLibraries")
 }

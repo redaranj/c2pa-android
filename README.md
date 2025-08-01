@@ -224,17 +224,18 @@ try {
      export ANDROID_HOME=$HOME/Library/Android/sdk
      ```
 
-3. Build the library:
+3. (Optional) Update C2PA version:
+   - Edit `library/gradle.properties` and change `c2paVersion`
+   - See available versions at https://github.com/contentauth/c2pa-rs/releases
+
+4. Build the library:
 
    ```bash
    # Complete build: setup, download binaries, and build AAR
    make library
-   
-   # For faster development (x86_64 emulator only)
-   make library-dev
    ```
 
-4. Check built outputs:
+5. Check built outputs:
 
    ```bash
    # Android Library AAR
@@ -250,13 +251,14 @@ The project includes a comprehensive Makefile with various targets:
 
 - `setup` - Create necessary directories
 - `download-binaries` - Download pre-built binaries from GitHub releases
-- `download-native-binaries` - Download pre-built native binaries
 - `library` - Complete library build: setup, download, and build AAR
-- `library-dev` - Download x86_64 library only for emulator (faster development)
 - `library-gradle` - Run Gradle build to generate AAR file
 - `tests` - Run library instrumented tests (requires device/emulator)
 - `coverage` - Generate instrumented test coverage report
 - `run-test-app` - Install and run the test app
+- `run-example-app` - Install and run the example app
+
+**Note**: Both test-app and example-app must be built from the root directory. They cannot be built independently as they depend on the library module.
 - `publish` - Publish Android library to GitHub packages
 - `all` - Complete library build (default, same as library)
 - `clean` - Remove build artifacts
