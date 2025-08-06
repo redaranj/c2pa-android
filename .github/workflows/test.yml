@@ -92,6 +92,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          slug: contentauth/c2pa-android
 
   lint:
     runs-on: ubuntu-latest
