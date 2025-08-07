@@ -44,3 +44,8 @@ library/src/main/jni/c2pa.h
 *.swp
 *.swo
 
+# Signing server files
+.signing-server.pid
+signing-server.log
+signing-server/build/
+

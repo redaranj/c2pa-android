@@ -111,6 +111,86 @@ fun deleteStrongBoxKey(keyTag: String): Boolean {
 object HardwareSecurity {
     
     /**
+     * Creates a CSR for a hardware-backed key and submits it to the signing server
+     * Returns a Signer configured with the signed certificate
+     */
+    @RequiresApi(Build.VERSION_CODES.M)
+    suspend fun createSignerWithCSR(
+        keyAlias: String,
+        certificateConfig: CertificateManager.CertificateConfig,
+        signingServerUrl: String = SigningServerClient.LOCAL_SERVER,
+        apiKey: String? = null,
+        requireStrongBox: Boolean = false
+    ): Signer {
+        // Generate hardware-backed key if it doesn't exist
+        val keyStore = KeyStore.getInstance("AndroidKeyStore")
+        keyStore.load(null)
+        
+        if (!keyStore.containsAlias(keyAlias)) {
+            CertificateManager.generateHardwareKey(keyAlias, requireStrongBox)
+        }
+        
+        // Generate CSR
+        val csr = CertificateManager.createCSR(keyAlias, certificateConfig)
+        
+        // Submit to signing server
+        val client = SigningServerClient(signingServerUrl, apiKey)
+        val metadata = SigningServerClient.CSRMetadata(
+            deviceId = Build.ID,
+            appVersion = "1.0.0", // Version can be passed as parameter if needed
+            purpose = "c2pa-signing"
+        )
+        
+        val response = client.signCSR(csr, metadata).getOrThrow()
+        
+        // Create signer with the certificate chain
+        return Signer.withCallback(
+            SigningAlgorithm.ES256,
+            response.certificateChain,
+            null // TSA URL if needed
+        ) { dataToSign ->
+            // Sign with hardware key
+            val privateKey = keyStore.getKey(keyAlias, null) as PrivateKey
+            val signature = Signature.getInstance("SHA256withECDSA")
+            signature.initSign(privateKey)
+            signature.update(dataToSign)
+            signature.sign()
+        }
+    }
+    
+    /**
+     * Creates a CSR for a StrongBox key and submits it to the signing server
+     */
+    @RequiresApi(Build.VERSION_CODES.P)
+    suspend fun createStrongBoxSignerWithCSR(
+        strongBoxConfig: StrongBoxSignerConfig,
+        certificateConfig: CertificateManager.CertificateConfig,
+        signingServerUrl: String = SigningServerClient.LOCAL_SERVER,
+        apiKey: String? = null
+    ): Signer {
+        // Generate CSR for StrongBox key
+        val csr = CertificateManager.createStrongBoxCSR(strongBoxConfig, certificateConfig)
+        
+        // Submit to signing server
+        val client = SigningServerClient(signingServerUrl, apiKey)
+        val metadata = SigningServerClient.CSRMetadata(
+            deviceId = Build.ID,
+            appVersion = "1.0.0", // Version can be passed as parameter if needed
+            purpose = "strongbox-signing"
+        )
+        
+        val response = client.signCSR(csr, metadata).getOrThrow()
+        
+        // Create signer with the certificate chain and StrongBox key
+        return Signer(
+            SigningAlgorithm.ES256,
+            response.certificateChain,
+            null,
+            strongBoxConfig
+        )
+    }
+    
+    /**
      * Check if StrongBox is available on this device
      */
     @RequiresApi(Build.VERSION_CODES.P)

@@ -1755,6 +1755,14 @@ abstract class TestSuiteCore {
             )
         })
 
+        // Add hardware signing tests if API level supports it
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            val hardwareTests = HardwareSigningTests(context)
+            // Note: runAllTests() is a suspend function, we need to await it
+            val hardwareTestResults = hardwareTests.runAllTests()
+            results.addAll(hardwareTestResults)
+        }
+
         results
     }
 
