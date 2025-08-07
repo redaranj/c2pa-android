@@ -1,4 +1,4 @@
-package org.contentauth.c2pa.example
+package org.contentauth.c2pa.exampleapp
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -14,7 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
-import org.contentauth.c2pa.example.ui.theme.C2PATheme
+import org.contentauth.c2pa.exampleapp.ui.theme.C2PATheme
 
 private const val TAG = "C2PAExample"
 

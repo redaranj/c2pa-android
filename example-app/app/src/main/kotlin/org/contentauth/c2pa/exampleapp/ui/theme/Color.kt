@@ -1,4 +1,4 @@
-package org.contentauth.c2pa.example.ui.theme
+package org.contentauth.c2pa.exampleapp.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

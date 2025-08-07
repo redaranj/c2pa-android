@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "org.contentauth.c2pa.example"
+    namespace = "org.contentauth.c2pa.exampleapp"
     compileSdk = 36
 
     defaultConfig {

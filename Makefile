@@ -40,7 +40,7 @@ run-test-app:
 run-example-app:
 	@echo "Installing and running example app..."
 	@./gradlew :example-app:app:installDebug
-	@adb shell am start -n org.contentauth.c2pa.exampleapp/org.contentauth.c2pa.example.MainActivity
+	@adb shell am start -n org.contentauth.c2pa.exampleapp/org.contentauth.c2pa.exampleapp.MainActivity
 
 # Publish library to GitHub packages
 publish:
