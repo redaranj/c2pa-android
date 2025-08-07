@@ -9,7 +9,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "org.contentauth.c2pa.example"
+        applicationId = "org.contentauth.c2pa.exampleapp"
         minSdk = 28
         targetSdk = 36
         versionCode = 1

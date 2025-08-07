@@ -15,5 +15,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "c2pa-android"
 include(":library")
+include(":test-shared")
 include(":test-app:app")
 include(":example-app:app")

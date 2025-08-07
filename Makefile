@@ -34,13 +34,13 @@ coverage:
 run-test-app:
 	@echo "Installing and running test app..."
 	@./gradlew :test-app:app:installDebug
-	@adb shell am start -n org.contentauth.c2pa.testapp/.MainActivity
+	@adb shell am start -n org.contentauth.c2pa.testapp/org.contentauth.c2pa.testapp.MainActivity
 
 # Run example app
 run-example-app:
 	@echo "Installing and running example app..."
 	@./gradlew :example-app:app:installDebug
-	@adb shell am start -n org.contentauth.c2pa.example/.MainActivity
+	@adb shell am start -n org.contentauth.c2pa.exampleapp/org.contentauth.c2pa.example.MainActivity
 
 # Publish library to GitHub packages
 publish:

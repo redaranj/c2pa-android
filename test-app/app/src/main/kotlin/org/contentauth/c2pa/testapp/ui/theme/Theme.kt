@@ -1,4 +1,4 @@
-package org.contentauth.c2pa.test.ui.theme
+package org.contentauth.c2pa.testapp.ui.theme
 
 import android.app.Activity
 import android.os.Build

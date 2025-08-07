@@ -1,4 +1,4 @@
-package org.contentauth.c2pa.test
+package org.contentauth.c2pa.test.shared
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
@@ -22,12 +22,15 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
- * Shared test suite for C2PA functionality.
- * This class contains all the test logic that can be run from both:
+ * Shared test suite base class for C2PA functionality.
+ * This class contains all the common test logic that can be run from both:
  * - The UI (TestScreen)
  * - Instrumented tests
+ * 
+ * Subclasses must implement the abstract methods to provide platform-specific
+ * resource loading functionality.
  */
-class TestSuite(private val context: Context) {
+abstract class TestSuiteCore {
 
     data class TestResult(
         val name: String,
@@ -35,22 +38,52 @@ class TestSuite(private val context: Context) {
         val message: String,
         val details: String? = null
     )
+    
+    companion object {
+        /**
+         * Load a test resource from the classpath (test-shared module resources).
+         * This provides a fallback for loading shared test resources.
+         */
+        fun loadSharedResourceAsBytes(resourceName: String): ByteArray? {
+            return try {
+                TestSuiteCore::class.java.classLoader?.getResourceAsStream(resourceName)?.use { 
+                    it.readBytes() 
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+        
+        fun loadSharedResourceAsString(resourceName: String): String? {
+            return try {
+                TestSuiteCore::class.java.classLoader?.getResourceAsStream(resourceName)?.use { 
+                    it.bufferedReader().readText()
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
 
-    suspend fun runAllTests(): List<TestResult> = withContext(Dispatchers.IO) {
-        val results = mutableListOf<TestResult>()
+    // Abstract methods to be implemented by subclasses
+    protected abstract fun getContext(): Context
+    protected abstract fun loadResourceAsBytes(resourceName: String): ByteArray
+    protected abstract fun loadResourceAsString(resourceName: String): String
+    protected abstract fun copyResourceToFile(resourceName: String, fileName: String): File
 
-        // Test 1: Library Version
-        results.add(runTest("Library Version") {
+    suspend fun testLibraryVersion(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Library Version") {
             val version = C2PA.version()
             if (version.isNotEmpty() && version.contains(".")) {
                 TestResult("Library Version", true, "C2PA version: $version", version)
             } else {
                 TestResult("Library Version", false, "Invalid version format", version)
             }
-        })
+        }
+    }
 
-        // Test 2: Error Handling
-        results.add(runTest("Error Handling") {
+    suspend fun testErrorHandling(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Error Handling") {
             val (exceptionThrown, errorMessage) = try {
                 C2PA.readFile("/non/existent/file.jpg")
                 false to "No exception thrown"
@@ -77,11 +110,199 @@ class TestSuite(private val context: Context) {
                 if (success) "Correctly handled missing file with appropriate error" else "Unexpected error handling",
                 "Exception: $exceptionThrown, Error: $errorMessage, Expected error pattern: $hasExpectedError"
             )
-        })
+        }
+    }
+
+    suspend fun testReadManifestFromTestImage(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Read Manifest from Test Image") {
+            val testImageFile = copyResourceToFile("adobe_20220124_ci", "test_adobe.jpg")
+            try {
+                val manifest = try {
+                    C2PA.readFile(testImageFile.absolutePath)
+                } catch (e: C2PAError) {
+                    null
+                }
+                if (manifest != null) {
+                    val json = JSONObject(manifest)
+                    val hasManifests = json.has("manifests")
+
+                    // Handle both array and object formats for manifests
+                    var manifestCount = 0
+                    var activeManifest: JSONObject? = null
+                    var claimGenerator: String? = null
+                    var assertionCount = 0
+
+                    if (hasManifests) {
+                        val manifestsValue = json.get("manifests")
+                        when (manifestsValue) {
+                            is JSONArray -> {
+                                manifestCount = manifestsValue.length()
+                                // Find active manifest in array
+                                for (i in 0 until manifestsValue.length()) {
+                                    val m = manifestsValue.getJSONObject(i)
+                                    if (json.optString("active_manifest") == m.optString("instance_id")) {
+                                        activeManifest = m
+                                        break
+                                    }
+                                }
+                            }
+                            is JSONObject -> {
+                                // Single manifest as object
+                                manifestCount = manifestsValue.length() // Number of keys
+                                // Get the first (and likely only) manifest
+                                val keys = manifestsValue.keys()
+                                if (keys.hasNext()) {
+                                    activeManifest = manifestsValue.getJSONObject(keys.next())
+                                }
+                            }
+                        }
+
+                        if (activeManifest != null) {
+                            claimGenerator = activeManifest.optString("claim_generator")
+                            val assertions = activeManifest.opt("assertions")
+                            assertionCount = when (assertions) {
+                                is JSONArray -> assertions.length()
+                                else -> 0
+                            }
+                        }
+                    }
+
+                    val success = hasManifests && manifestCount > 0 && activeManifest != null
+
+                    TestResult(
+                        "Read Manifest from Test Image",
+                        success,
+                        if (success) "Successfully read and validated manifest" else "Manifest validation failed",
+                        "Manifests: $manifestCount, Active: ${activeManifest != null}, " +
+                        "Generator: $claimGenerator, Assertions: $assertionCount\n" +
+                        manifest.take(300) + if (manifest.length > 300) "..." else ""
+                    )
+                } else {
+                    val error = C2PA.getError()
+                    TestResult("Read Manifest from Test Image", false, "Failed to read manifest", error ?: "No error")
+                }
+            } finally {
+                testImageFile.delete()
+            }
+        }
+    }
+
+    suspend fun testStreamAPI(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Stream API") {
+            val testImageData = loadResourceAsBytes("adobe_20220124_ci")
+            val memStream = MemoryStream(testImageData)
+            try {
+                val reader = Reader.fromStream("image/jpeg", memStream.stream)
+                try {
+                    val json = reader.json()
+                    TestResult("Stream API", json.isNotEmpty(), "Stream API working", json.take(200))
+                } finally {
+                    reader.close()
+                }
+            } catch (e: C2PAError) {
+                TestResult("Stream API", false, "Failed to create reader from stream", e.toString())
+            } finally {
+                memStream.close()
+            }
+        }
+    }
+
+    suspend fun testBuilderAPI(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Builder API") {
+            val manifestJson = """{
+                "claim_generator": "test_app/1.0",
+                "assertions": [
+                    {"label": "c2pa.test", "data": {"test": true}}
+                ]
+            }"""
+
+            try {
+                val builder = Builder.fromJson(manifestJson)
+                try {
+                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                    val sourceStream = MemoryStream(sourceImageData)
+
+                    val fileTest = File.createTempFile("c2pa-stream-api-test",".jpg")
+                    val destStream = FileStream(fileTest)
+                    try {
+                        val certPem = loadResourceAsString("es256_certs")
+                        val keyPem = loadResourceAsString("es256_private")
+
+                        val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
+                        val signer = Signer.fromInfo(signerInfo)
+
+                        try {
+                            val result = builder.sign("image/jpeg", sourceStream.stream, destStream, signer)
+
+                            val manifest = C2PA.readFile(fileTest.absolutePath)
+                            val json = if (manifest != null) JSONObject(manifest) else null
+                            val success = json?.has("manifests") ?: false
+
+                            TestResult(
+                                "Builder API",
+                                success,
+                                if (success) "Successfully signed image" else "Signing failed",
+                                "Original: ${sourceImageData.size}, Signed: ${fileTest.length()}, Result size: ${result.size}\n\n${json}"
+                            )
+                        } finally {
+                            signer.close()
+                        }
+                    } finally {
+                        sourceStream.close()
+                        destStream.close()
+                    }
+                } finally {
+                    builder.close()
+                }
+            } catch (e: C2PAError) {
+                TestResult("Builder API", false, "Failed to create builder", e.toString())
+            }
+        }
+    }
+
+    suspend fun runAllTests(): List<TestResult> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<TestResult>()
+
+        // Test 1: Library Version
+        results.add(testLibraryVersion())
+
+    suspend fun testErrorHandling(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Error Handling") {
+            val (exceptionThrown, errorMessage) = try {
+                C2PA.readFile("/non/existent/file.jpg")
+                false to "No exception thrown"
+            } catch (e: C2PAError) {
+                true to e.toString()
+            } catch (e: Exception) {
+                false to "Unexpected exception: ${e.message}"
+            }
+
+            // Validate error contains expected content
+            val hasExpectedError = exceptionThrown && errorMessage != null && (
+                errorMessage.contains("No such file", ignoreCase = true) ||
+                errorMessage.contains("not found", ignoreCase = true) ||
+                errorMessage.contains("does not exist", ignoreCase = true) ||
+                errorMessage.contains("FileNotFound", ignoreCase = true) ||
+                errorMessage.contains("os error 2", ignoreCase = true) // Unix file not found
+            )
+
+            val success = exceptionThrown && hasExpectedError
+
+            TestResult(
+                "Error Handling",
+                success,
+                if (success) "Correctly handled missing file with appropriate error" else "Unexpected error handling",
+                "Exception: $exceptionThrown, Error: $errorMessage, Expected error pattern: $hasExpectedError"
+            )
+        }
+    }
+
+        // Test 2: Error Handling
+        results.add(testErrorHandling())
 
         // Test 3: Read Manifest from Test Image
         results.add(runTest("Read Manifest from Test Image") {
-            val testImageFile = copyResourceToFile(context, R.raw.adobe_20220124_ci, "test_adobe.jpg")
+            val testImageFile = copyResourceToFile("adobe_20220124_ci", "test_adobe.jpg")
             try {
                 val manifest = try {
                     C2PA.readFile(testImageFile.absolutePath)
@@ -154,7 +375,7 @@ class TestSuite(private val context: Context) {
 
         // Test 4: Stream API
         results.add(runTest("Stream API") {
-            val testImageData = getResourceAsBytes(context, R.raw.adobe_20220124_ci)
+            val testImageData = loadResourceAsBytes("adobe_20220124_ci")
             val memStream = MemoryStream(testImageData)
             try {
                 val reader = Reader.fromStream("image/jpeg", memStream.stream)
@@ -183,14 +404,14 @@ class TestSuite(private val context: Context) {
             try {
                 val builder = Builder.fromJson(manifestJson)
                 try {
-                    val sourceImageData = getResourceAsBytes(context, R.raw.pexels_asadphoto_457882)
+                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
                     val sourceStream = MemoryStream(sourceImageData)
 
                     val fileTest = File.createTempFile("c2pa-stream-api-test",".jpg")
                     val destStream = FileStream(fileTest)
                     try {
-                        val certPem = getResourceAsString(context, R.raw.es256_certs)
-                        val keyPem = getResourceAsString(context, R.raw.es256_private)
+                        val certPem = loadResourceAsString("es256_certs")
+                        val keyPem = loadResourceAsString("es256_private")
 
                         val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
                         val signer = Signer.fromInfo(signerInfo)
@@ -258,7 +479,7 @@ class TestSuite(private val context: Context) {
 
         // Test 7: Read Ingredient
         results.add(runTest("Read Ingredient") {
-            val testImageFile = copyResourceToFile(context, R.raw.adobe_20220124_ci, "test_ingredient.jpg")
+            val testImageFile = copyResourceToFile("adobe_20220124_ci", "test_ingredient.jpg")
             try {
                 val standaloneIngredient = try {
                     C2PA.readIngredientFile(testImageFile.absolutePath)
@@ -318,7 +539,7 @@ class TestSuite(private val context: Context) {
 
         // Test 8: Invalid File Handling
         results.add(runTest("Invalid File Handling") {
-            val textFile = File(context.cacheDir, "test.txt")
+            val textFile = File(getContext().cacheDir, "test.txt")
             textFile.writeText("This is not an image file")
             try {
                 val (success, errorMessage) = try {
@@ -343,7 +564,7 @@ class TestSuite(private val context: Context) {
 
         // Test 9: Resource Reading
         results.add(runTest("Resource Reading") {
-            val testImageData = getResourceAsBytes(context, R.raw.adobe_20220124_ci)
+            val testImageData = loadResourceAsBytes("adobe_20220124_ci")
             val stream = MemoryStream(testImageData)
             try {
                 try {
@@ -539,7 +760,7 @@ class TestSuite(private val context: Context) {
                 val builder = Builder.fromJson(manifestJson)
                 try {
                     val ingredientJson = """{"title": "Test Ingredient", "format": "image/jpeg"}"""
-                    val ingredientImageData = getResourceAsBytes(context, R.raw.pexels_asadphoto_457882)
+                    val ingredientImageData = loadResourceAsBytes("pexels_asadphoto_457882")
                     val ingredientStream = MemoryStream(ingredientImageData)
                     try {
                         builder.addIngredient(ingredientJson, "image/jpeg", ingredientStream.stream)
@@ -639,13 +860,13 @@ class TestSuite(private val context: Context) {
 
                 val builder = Builder.fromJson(manifestJson)
                 try {
-                    val sourceImageData = getResourceAsBytes(context, R.raw.pexels_asadphoto_457882)
+                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
                     val sourceStream = MemoryStream(sourceImageData)
                     val fileTest = File.createTempFile("c2pa-manifest-direct-sign", ".jpg")
                     val destStream = FileStream(fileTest)
 
-                    val certPem = getResourceAsString(context, R.raw.es256_certs)
-                    val keyPem = getResourceAsString(context, R.raw.es256_private)
+                    val certPem = loadResourceAsString("es256_certs")
+                    val keyPem = loadResourceAsString("es256_private")
                     val signer = Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem))
 
                     val signResult = builder.sign("image/jpeg", sourceStream.stream, destStream, signer)
@@ -654,7 +875,7 @@ class TestSuite(private val context: Context) {
                     destStream.close()
                     signer.close()
 
-                    val freshImageData = getResourceAsBytes(context, R.raw.pexels_asadphoto_457882)
+                    val freshImageData = loadResourceAsBytes("pexels_asadphoto_457882")
                     val freshStream = MemoryStream(freshImageData)
 
                     val success = if (signResult.manifestBytes != null) {
@@ -701,13 +922,13 @@ class TestSuite(private val context: Context) {
             try {
                 val builder = Builder.fromJson(manifestJson)
                 try {
-                    val sourceImageData = getResourceAsBytes(context, R.raw.pexels_asadphoto_457882)
+                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
                     val sourceStream = MemoryStream(sourceImageData)
                     val fileTest = File.createTempFile("c2pa-callback-signer", ".jpg")
                     val destStream = FileStream(fileTest)
 
-                    val certPem = getResourceAsString(context, R.raw.es256_certs)
-                    val keyPem = getResourceAsString(context, R.raw.es256_private)
+                    val certPem = loadResourceAsString("es256_certs")
+                    val keyPem = loadResourceAsString("es256_private")
 
                     var signCallCount = 0
 
@@ -777,8 +998,8 @@ class TestSuite(private val context: Context) {
 
         // Test 16: File Operations with Data Directory
         results.add(runTest("File Operations with Data Directory") {
-            val testImageFile = copyResourceToFile(context, R.raw.adobe_20220124_ci, "test_datadir.jpg")
-            val dataDir = File(context.cacheDir, "c2pa_data")
+            val testImageFile = copyResourceToFile("adobe_20220124_ci", "test_datadir.jpg")
+            val dataDir = File(getContext().cacheDir, "c2pa_data")
             dataDir.mkdirs()
 
             try {
@@ -907,7 +1128,7 @@ class TestSuite(private val context: Context) {
 
         // Test 19: Stream File Options
         results.add(runTest("Stream File Options") {
-            val tempFile = File.createTempFile("file-stream-preserve", ".dat", context.cacheDir)
+            val tempFile = File.createTempFile("file-stream-preserve", ".dat", getContext().cacheDir)
             tempFile.writeBytes(ByteArray(100) { it.toByte() })
 
             try {
@@ -939,8 +1160,8 @@ class TestSuite(private val context: Context) {
             }"""
 
             try {
-                val certPem = getResourceAsString(context, R.raw.es256_certs)
-                val keyPem = getResourceAsString(context, R.raw.es256_private)
+                val certPem = loadResourceAsString("es256_certs")
+                val keyPem = loadResourceAsString("es256_private")
 
                 val mockServiceUrl = "http://mock.signing.service/sign"
 
@@ -953,7 +1174,7 @@ class TestSuite(private val context: Context) {
                 try {
                     val builder = Builder.fromJson(manifestJson)
                     try {
-                        val sourceImageData = getResourceAsBytes(context, R.raw.pexels_asadphoto_457882)
+                        val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
                         val sourceStream = MemoryStream(sourceImageData)
                         val fileTest = File.createTempFile("c2pa-web-service-sign", ".jpg")
                         val destStream = FileStream(fileTest)
@@ -1001,7 +1222,7 @@ class TestSuite(private val context: Context) {
 
         // Test 21: Hardware Signer Creation
         results.add(runTest("Hardware Signer Creation") {
-            val hasStrongBox = context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_STRONGBOX_KEYSTORE)
+            val hasStrongBox = getContext().packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_STRONGBOX_KEYSTORE)
 
             var genInHw = false
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
@@ -1057,7 +1278,7 @@ class TestSuite(private val context: Context) {
 
         // Test 22: StrongBox Signer Creation
         results.add(runTest("StrongBox Signer Creation") {
-            val hasStrongBox = context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_STRONGBOX_KEYSTORE)
+            val hasStrongBox = getContext().packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_STRONGBOX_KEYSTORE)
 
             var strongBoxKeyCreated = false
             if (hasStrongBox && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
@@ -1109,13 +1330,13 @@ class TestSuite(private val context: Context) {
                     val manifestJson = """{"claim_generator": "test_app/1.0", "assertions": [{"label": "c2pa.test", "data": {"test": true}}]}"""
                     val builder = Builder.fromJson(manifestJson)
 
-                    val sourceImageData = getResourceAsBytes(context, R.raw.pexels_asadphoto_457882)
+                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
                     val sourceStream = MemoryStream(sourceImageData)
                     val fileTest = File.createTempFile("c2pa-algorithm-$alg", ".jpg")
                     val destStream = FileStream(fileTest)
 
-                    val certPem = getResourceAsString(context, R.raw.es256_certs)
-                    val keyPem = getResourceAsString(context, R.raw.es256_private)
+                    val certPem = loadResourceAsString("es256_certs")
+                    val keyPem = loadResourceAsString("es256_private")
                     val algorithm = SigningAlgorithm.entries.find { it.name == alg } ?: SigningAlgorithm.ES256
                     val signerInfo = SignerInfo(algorithm, certPem, keyPem)
                     val signer = Signer.fromInfo(signerInfo)
@@ -1147,8 +1368,8 @@ class TestSuite(private val context: Context) {
 
         // Test 24: Signer Reserve Size
         results.add(runTest("Signer Reserve Size") {
-            val certPem = getResourceAsString(context, R.raw.es256_certs)
-            val keyPem = getResourceAsString(context, R.raw.es256_private)
+            val certPem = loadResourceAsString("es256_certs")
+            val keyPem = loadResourceAsString("es256_private")
             val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
             val signer = Signer.fromInfo(signerInfo)
 
@@ -1168,7 +1389,7 @@ class TestSuite(private val context: Context) {
 
         // Test 25: Reader Resource Error Handling
         results.add(runTest("Reader Resource Error Handling") {
-            val testImageData = getResourceAsBytes(context, R.raw.adobe_20220124_ci)
+            val testImageData = loadResourceAsBytes("adobe_20220124_ci")
             val stream = MemoryStream(testImageData)
             try {
                 val reader = Reader.fromStream("image/jpeg", stream.stream)
@@ -1315,12 +1536,12 @@ class TestSuite(private val context: Context) {
 
         // Test 28: Sign File
         results.add(runTest("Sign File") {
-            val sourceFile = copyResourceToFile(context, R.raw.pexels_asadphoto_457882, "source_signfile.jpg")
-            val destFile = File(context.cacheDir, "dest_signfile.jpg")
+            val sourceFile = copyResourceToFile("pexels_asadphoto_457882", "source_signfile.jpg")
+            val destFile = File(getContext().cacheDir, "dest_signfile.jpg")
 
             try {
-                val certPem = getResourceAsString(context, R.raw.es256_certs)
-                val keyPem = getResourceAsString(context, R.raw.es256_private)
+                val certPem = loadResourceAsString("es256_certs")
+                val keyPem = loadResourceAsString("es256_private")
                 val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
 
                 val manifestJson = """{
@@ -1351,7 +1572,7 @@ class TestSuite(private val context: Context) {
 
         // Test 29: JSON Round-trip
         results.add(runTest("JSON Round-trip") {
-            val testImageData = getResourceAsBytes(context, R.raw.adobe_20220124_ci)
+            val testImageData = loadResourceAsBytes("adobe_20220124_ci")
             val memStream = MemoryStream(testImageData)
 
             try {
@@ -1537,7 +1758,7 @@ class TestSuite(private val context: Context) {
         results
     }
 
-    private suspend fun runTest(testName: String, test: suspend () -> TestResult): TestResult = withContext(Dispatchers.IO) {
+    protected open suspend fun runTest(testName: String, test: suspend () -> TestResult): TestResult = withContext(Dispatchers.IO) {
         try {
             test()
         } catch (e: Exception) {
@@ -1545,31 +1766,7 @@ class TestSuite(private val context: Context) {
         }
     }
 
-    private fun getResourceAsBytes(context: Context, resourceId: Int): ByteArray {
-        val inputStream = context.resources.openRawResource(resourceId)
-        val data = inputStream.readBytes()
-        inputStream.close()
-        return data
-    }
-
-    private fun getResourceAsString(context: Context, resourceId: Int): String {
-        val inputStream = context.resources.openRawResource(resourceId)
-        val text = inputStream.bufferedReader().use { it.readText() }
-        inputStream.close()
-        return text
-    }
-
-    private fun copyResourceToFile(context: Context, resourceId: Int, fileName: String): File {
-        val file = File(context.cacheDir, fileName)
-        val inputStream = context.resources.openRawResource(resourceId)
-        file.outputStream().use { output ->
-            inputStream.copyTo(output)
-        }
-        inputStream.close()
-        return file
-    }
-
-    private fun createSimpleJPEGThumbnail(): ByteArray {
+    protected open fun createSimpleJPEGThumbnail(): ByteArray {
         return byteArrayOf(
             0xFF.toByte(), 0xD8.toByte(),
             0xFF.toByte(), 0xE0.toByte(),

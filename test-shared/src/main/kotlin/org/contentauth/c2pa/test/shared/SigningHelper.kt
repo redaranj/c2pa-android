@@ -1,4 +1,4 @@
-package org.contentauth.c2pa.test
+package org.contentauth.c2pa.test.shared
 
 import java.security.KeyFactory
 import java.security.Signature
@@ -7,7 +7,7 @@ import java.util.Base64
 
 /**
  * Simple signing helper for Android C2PA callback signers
- * (Copied from library's InstrumentedTests.kt)
+ * Shared between instrumented tests and test app
  */
 object SigningHelper {
     

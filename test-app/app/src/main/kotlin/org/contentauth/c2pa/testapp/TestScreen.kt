@@ -1,5 +1,6 @@
-package org.contentauth.c2pa.test
+package org.contentauth.c2pa.testapp
 
+import android.content.Context
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,12 +30,51 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
+import org.contentauth.c2pa.test.shared.TestSuiteCore
+import java.io.File
+
+// Type alias for convenience
+typealias TestResult = TestSuiteCore.TestResult
+
+/**
+ * Android-specific test suite implementation embedded in the test screen.
+ * Extends TestSuiteCore to provide Android resource loading.
+ */
+private class AndroidTestSuite(private val context: Context) : TestSuiteCore() {
+    
+    override fun getContext(): Context = context
+    
+    override fun loadResourceAsBytes(resourceName: String): ByteArray {
+        // First try to load from shared resources
+        val sharedResource = TestSuiteCore.loadSharedResourceAsBytes("$resourceName.jpg")
+            ?: TestSuiteCore.loadSharedResourceAsBytes("$resourceName.pem")
+            ?: TestSuiteCore.loadSharedResourceAsBytes("$resourceName.key")
+        
+        return sharedResource ?: throw IllegalArgumentException("Resource not found: $resourceName")
+    }
+    
+    override fun loadResourceAsString(resourceName: String): String {
+        // First try to load from shared resources
+        val sharedResource = TestSuiteCore.loadSharedResourceAsString("$resourceName.jpg")
+            ?: TestSuiteCore.loadSharedResourceAsString("$resourceName.pem")
+            ?: TestSuiteCore.loadSharedResourceAsString("$resourceName.key")
+        
+        return sharedResource ?: throw IllegalArgumentException("Resource not found: $resourceName")
+    }
+    
+    override fun copyResourceToFile(resourceName: String, fileName: String): File {
+        val file = File(context.cacheDir, fileName)
+        val resourceBytes = loadResourceAsBytes(resourceName)
+        file.writeBytes(resourceBytes)
+        return file
+    }
+}
 
 @Composable
 fun TestScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    var testResults by remember { mutableStateOf(listOf<TestSuite.TestResult>()) }
+    var testResults by remember { mutableStateOf(listOf<TestResult>()) }
     var isRunning by remember { mutableStateOf(false) }
     
     Column(
@@ -53,7 +93,7 @@ fun TestScreen(modifier: Modifier = Modifier) {
             onClick = {
                 coroutineScope.launch {
                     isRunning = true
-                    val testSuite = TestSuite(context)
+                    val testSuite = AndroidTestSuite(context)
                     testResults = testSuite.runAllTests()
                     isRunning = false
                 }
@@ -80,7 +120,7 @@ fun TestScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun TestResultCard(result: TestSuite.TestResult) {
+fun TestResultCard(result: TestResult) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(

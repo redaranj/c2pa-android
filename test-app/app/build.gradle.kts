@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "org.contentauth.c2pa.test"
+    namespace = "org.contentauth.c2pa.testapp"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "org.contentauth.c2pa.test"
+        applicationId = "org.contentauth.c2pa.testapp"
         minSdk = 28
         targetSdk = 36
         versionCode = 1
@@ -45,6 +45,7 @@ android {
 
 dependencies {
     implementation(project(":library"))
+    implementation(project(":test-shared"))
     implementation("net.java.dev.jna:jna:5.13.0@aar")
     
     implementation(libs.androidx.core.ktx)
