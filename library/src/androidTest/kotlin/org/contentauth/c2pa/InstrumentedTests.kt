@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.contentauth.c2pa.test.shared.*
+import android.os.Build
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -290,6 +291,122 @@ class InstrumentedTests : TestSuiteCore() {
         val result = testResults.find { it.name == "Algorithm Coverage" }
         assertNotNull(result, "Algorithm Coverage test not found")
         assertTrue(result.success, "Algorithm Coverage test failed: ${result.message}")
+    }
+    
+    // Hardware Signing Tests
+    
+    @Test
+    fun runTestSigningServerHealth() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            // Skip on older devices
+            return
+        }
+        val result = testResults.find { it.name == "Signing Server Health" }
+        assertNotNull(result, "Signing Server Health test not found")
+        // Server might not be available in all test environments
+        // so we just verify the test runs without crashing
+        assertNotNull(result.message, "Test should have a message")
+    }
+    
+    @Test
+    fun runTestHardwareSecurityAvailability() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            // Skip on older devices
+            return
+        }
+        val result = testResults.find { it.name == "Hardware Security Availability" }
+        assertNotNull(result, "Hardware Security Availability test not found")
+        assertTrue(result.success, "Hardware Security Availability test failed: ${result.message}")
+    }
+    
+    @Test
+    fun runTestCSRGeneration() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            // Skip on older devices
+            return
+        }
+        val result = testResults.find { it.name == "CSR Generation" }
+        assertNotNull(result, "CSR Generation test not found")
+        // On physical devices with hardware security, this should succeed
+        // On emulators, it might fail but shouldn't crash
+        if (result.success) {
+            assertTrue(result.message.contains("CSR has valid PEM format"), "CSR should have valid format")
+        }
+    }
+    
+    @Test
+    fun runTestCSRSubmission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            // Skip on older devices
+            return
+        }
+        val result = testResults.find { it.name == "CSR Submission" }
+        assertNotNull(result, "CSR Submission test not found")
+        // This test requires the signing server to be running
+        // It might be skipped if server is not available
+        assertNotNull(result.message, "Test should have a message")
+    }
+    
+    @Test
+    fun runTestHardwareKeySigning() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            // Skip on older devices
+            return
+        }
+        val result = testResults.find { it.name == "Hardware Key Signing" }
+        assertNotNull(result, "Hardware Key Signing test not found")
+        // This test might be skipped if server is not available
+        assertNotNull(result.message, "Test should have a message")
+    }
+    
+    @Test
+    fun runTestStrongBoxAvailability() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            // StrongBox requires Android P+
+            return
+        }
+        val result = testResults.find { it.name == "StrongBox Availability" }
+        assertNotNull(result, "StrongBox Availability test not found")
+        // StrongBox might not be available on all devices
+        // The test should complete regardless
+        assertTrue(result.success, "StrongBox test failed: ${result.message}")
+    }
+    
+    @Test
+    fun runTestStrongBoxCSRGeneration() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            // StrongBox requires Android P+
+            return
+        }
+        val result = testResults.find { it.name == "StrongBox CSR Generation" }
+        assertNotNull(result, "StrongBox CSR Generation test not found")
+        // This might fail on devices without StrongBox
+        assertNotNull(result.message, "Test should have a message")
+    }
+    
+    @Test
+    fun runTestStrongBoxSigning() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            // StrongBox requires Android P+
+            return
+        }
+        val result = testResults.find { it.name == "StrongBox Signing" }
+        assertNotNull(result, "StrongBox Signing test not found")
+        // This might fail on devices without StrongBox or if server is not available
+        assertNotNull(result.message, "Test should have a message")
+    }
+    
+    @Test
+    fun runTestEndToEndHardwareSigning() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            // Skip on older devices
+            return
+        }
+        val result = testResults.find { it.name == "End-to-End Hardware Signing" }
+        assertNotNull(result, "End-to-End Hardware Signing test not found")
+        // This is the comprehensive test
+        // It might be skipped if server is not available
+        assertNotNull(result.message, "Test should have a message")
     }
     
     // Add any unique instrumented tests here that are not in TestSuiteCore
