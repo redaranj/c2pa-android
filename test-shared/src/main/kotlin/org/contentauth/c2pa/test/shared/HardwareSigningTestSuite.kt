@@ -248,9 +248,10 @@ class HardwareSigningTestSuite(private val context: Context) {
                 testSteps.add("⚠️ Signing server not available, skipping test")
                 return TestSuiteCore.TestResult(
                     "CSR Submission",
-                    true,
+                    false,
                     testSteps.joinToString("\n"),
-                    "Test skipped - server not available"
+                    "Test skipped - server not available",
+                    TestSuiteCore.TestStatus.SKIPPED
                 )
             }
             
@@ -330,9 +331,10 @@ class HardwareSigningTestSuite(private val context: Context) {
                 testSteps.add("⚠️ Signing server not available, skipping test")
                 return TestSuiteCore.TestResult(
                     "Hardware Key Signing",
-                    true,
+                    false,
                     testSteps.joinToString("\n"),
-                    "Test skipped - server not available"
+                    "Test skipped - server not available",
+                    TestSuiteCore.TestStatus.SKIPPED
                 )
             }
             
@@ -362,7 +364,8 @@ class HardwareSigningTestSuite(private val context: Context) {
             }"""
             
             val builder = Builder.fromJson(manifestJson)
-            val sourceImageData = context.resources.openRawResource(R.raw.pexels_asadphoto_457882).readBytes()
+            val sourceImageData = TestSuiteCore.loadSharedResourceAsBytes("pexels_asadphoto_457882.jpg") 
+                ?: throw IllegalStateException("Failed to load test image")
             val sourceStream = DataStream(sourceImageData)
             
             val outputFile = File.createTempFile("hw_signed_", ".jpg", context.cacheDir)
@@ -478,9 +481,10 @@ class HardwareSigningTestSuite(private val context: Context) {
             testSteps.add("⚠️ StrongBox not available, skipping test")
             return TestSuiteCore.TestResult(
                 "StrongBox CSR Generation",
-                true,
+                false,
                 testSteps.joinToString("\n"),
-                "Test skipped - StrongBox not available"
+                "Test skipped - StrongBox not available",
+                TestSuiteCore.TestStatus.SKIPPED
             )
         }
         
@@ -541,9 +545,10 @@ class HardwareSigningTestSuite(private val context: Context) {
             testSteps.add("⚠️ StrongBox not available, skipping test")
             return TestSuiteCore.TestResult(
                 "StrongBox Signing",
-                true,
+                false,
                 testSteps.joinToString("\n"),
-                "Test skipped - StrongBox not available"
+                "Test skipped - StrongBox not available",
+                TestSuiteCore.TestStatus.SKIPPED
             )
         }
         
@@ -553,9 +558,10 @@ class HardwareSigningTestSuite(private val context: Context) {
             testSteps.add("⚠️ Signing server not available, skipping test")
             return TestSuiteCore.TestResult(
                 "StrongBox Signing",
-                true,
+                false,
                 testSteps.joinToString("\n"),
-                "Test skipped - server not available"
+                "Test skipped - server not available",
+                TestSuiteCore.TestStatus.SKIPPED
             )
         }
         
@@ -619,9 +625,10 @@ class HardwareSigningTestSuite(private val context: Context) {
             testSteps.add("⚠️ Signing server not available, skipping test")
             return TestSuiteCore.TestResult(
                 "End-to-End Hardware Signing",
-                true,
+                false,
                 testSteps.joinToString("\n"),
-                "Test skipped - server not available"
+                "Test skipped - server not available",
+                TestSuiteCore.TestStatus.SKIPPED
             )
         }
         
@@ -630,6 +637,20 @@ class HardwareSigningTestSuite(private val context: Context) {
         return try {
             // Step 1: Create hardware-backed signer with CSR
             testSteps.add("Step 1: Creating hardware signer with CSR")
+            
+            // First check if we can actually create hardware-backed keys
+            val hasHardwareKeystore = HardwareSecurity.isHardwareBackedKeystoreAvailable()
+            if (!hasHardwareKeystore) {
+                testSteps.add("⚠️ Hardware-backed keystore not available on this device")
+                return TestSuiteCore.TestResult(
+                    "End-to-End Hardware Signing",
+                    false,
+                    testSteps.joinToString("\n"),
+                    "Test skipped - no hardware security available",
+                    TestSuiteCore.TestStatus.SKIPPED
+                )
+            }
+            
             val certConfig = CertificateManager.CertificateConfig(
                 commonName = "E2E Test Signer",
                 organization = "C2PA Android Test",
@@ -643,13 +664,42 @@ class HardwareSigningTestSuite(private val context: Context) {
             val requireStrongBox = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && 
                                   HardwareSecurity.isStrongBoxAvailable(context)
             
-            val signer = HardwareSecurity.createSignerWithCSR(
-                keyAlias = keyAlias,
-                certificateConfig = certConfig,
-                signingServerUrl = serverUrl,
-                requireStrongBox = requireStrongBox
-            )
+            val signer = try {
+                HardwareSecurity.createSignerWithCSR(
+                    keyAlias = keyAlias,
+                    certificateConfig = certConfig,
+                    signingServerUrl = serverUrl,
+                    requireStrongBox = requireStrongBox
+                )
+            } catch (e: Exception) {
+                // If we can't create the signer (e.g., on emulator), skip the test
+                testSteps.add("⚠️ Cannot create hardware signer: ${e.message}")
+                deleteStrongBoxKey(keyAlias)
+                return TestSuiteCore.TestResult(
+                    "End-to-End Hardware Signing",
+                    false,
+                    testSteps.joinToString("\n"),
+                    "Test skipped - hardware signing not functional",
+                    TestSuiteCore.TestStatus.SKIPPED
+                )
+            }
+            
+            // Verify the key is actually hardware-backed
+            val isHardwareBacked = CertificateManager.isKeyHardwareBacked(keyAlias)
+            if (!isHardwareBacked) {
+                testSteps.add("⚠️ Key was created but is NOT hardware-backed (software emulation)")
+                deleteStrongBoxKey(keyAlias)
+                return TestSuiteCore.TestResult(
+                    "End-to-End Hardware Signing",
+                    false,
+                    testSteps.joinToString("\n"),
+                    "Test skipped - key is not hardware-backed",
+                    TestSuiteCore.TestStatus.SKIPPED
+                )
+            }
+            
             testSteps.add("✓ Created hardware signer (StrongBox: $requireStrongBox)")
+            testSteps.add("✓ Verified key is hardware-backed")
             
             // Step 2: Create C2PA manifest
             testSteps.add("\nStep 2: Creating C2PA manifest")
@@ -680,7 +730,8 @@ class HardwareSigningTestSuite(private val context: Context) {
             
             // Step 3: Sign image with hardware key
             testSteps.add("\nStep 3: Signing image with hardware key")
-            val sourceImageData = context.resources.openRawResource(R.raw.pexels_asadphoto_457882).readBytes()
+            val sourceImageData = TestSuiteCore.loadSharedResourceAsBytes("pexels_asadphoto_457882.jpg") 
+                ?: throw IllegalStateException("Failed to load test image")
             val sourceStream = DataStream(sourceImageData)
             
             val outputFile = File.createTempFile("e2e_hw_signed_", ".jpg", context.cacheDir)

@@ -32,11 +32,18 @@ import java.io.File
  */
 abstract class TestSuiteCore {
 
+    enum class TestStatus {
+        PASSED,
+        FAILED,
+        SKIPPED
+    }
+    
     data class TestResult(
         val name: String,
-        val success: Boolean,
+        val success: Boolean,  // Keep for backward compatibility
         val message: String,
-        val details: String? = null
+        val details: String? = null,
+        val status: TestStatus = if (success) TestStatus.PASSED else TestStatus.FAILED
     )
     
     companion object {
@@ -1757,10 +1764,19 @@ abstract class TestSuiteCore {
 
         // Add hardware signing tests if API level supports it
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-            val hardwareTests = HardwareSigningTests(context)
-            // Note: runAllTests() is a suspend function, we need to await it
-            val hardwareTestResults = hardwareTests.runAllTests()
-            results.addAll(hardwareTestResults)
+            try {
+                val hardwareTestSuite = HardwareSigningTestSuite(getContext())
+                val hardwareResults = hardwareTestSuite.runAllTests()
+                results.addAll(hardwareResults)
+            } catch (e: Exception) {
+                // If hardware tests fail to initialize, add an error result
+                results.add(TestResult(
+                    "Hardware Signing Tests",
+                    false,
+                    "Failed to run hardware tests: ${e.message}",
+                    e.stackTraceToString()
+                ))
+            }
         }
 
         results

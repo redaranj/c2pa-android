@@ -121,14 +121,28 @@ fun TestScreen(modifier: Modifier = Modifier) {
 
 @Composable
 fun TestResultCard(result: TestResult) {
+    val backgroundColor = when (result.status) {
+        TestSuiteCore.TestStatus.PASSED -> Color(0xFFE8F5E9) // Very light green
+        TestSuiteCore.TestStatus.FAILED -> MaterialTheme.colorScheme.errorContainer
+        TestSuiteCore.TestStatus.SKIPPED -> Color(0xFFFFF3E0) // Light amber/yellow
+    }
+    
+    val icon = when (result.status) {
+        TestSuiteCore.TestStatus.PASSED -> "✓"
+        TestSuiteCore.TestStatus.FAILED -> "✗"
+        TestSuiteCore.TestStatus.SKIPPED -> "⊘"
+    }
+    
+    val iconColor = when (result.status) {
+        TestSuiteCore.TestStatus.PASSED -> MaterialTheme.colorScheme.primary
+        TestSuiteCore.TestStatus.FAILED -> MaterialTheme.colorScheme.error
+        TestSuiteCore.TestStatus.SKIPPED -> Color(0xFFF57C00) // Amber/Orange
+    }
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (result.success) {
-                Color(0xFFE8F5E9) // Very light green color
-            } else {
-                MaterialTheme.colorScheme.errorContainer
-            }
+            containerColor = backgroundColor
         )
     ) {
         Column(
@@ -138,13 +152,9 @@ fun TestResultCard(result: TestResult) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (result.success) "✓" else "✗",
+                    text = icon,
                     style = MaterialTheme.typography.headlineSmall,
-                    color = if (result.success) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.error
-                    }
+                    color = iconColor
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
