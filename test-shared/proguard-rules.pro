@@ -12,3 +12,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Keep test classes
+-keep class org.contentauth.c2pa.test.shared.** { *; }
+
+# Java 17 compatibility
+-dontwarn java.lang.invoke.StringConcatFactory
