@@ -45,7 +45,7 @@ android {
         println("Using NDK version from local.properties: $localNdkVersion")
         ndkVersion = localNdkVersion
     } else {
-        val defaultNdkVersion = "27.0.12077973"
+        val defaultNdkVersion = "27.3.13750724"
         println("No NDK version specified in local.properties, using default: $defaultNdkVersion")
         ndkVersion = defaultNdkVersion
     }
@@ -85,7 +85,7 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
-    
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
@@ -106,10 +106,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("net.java.dev.jna:jna:5.13.0@aar")
-    
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:1.9.20")
-    
+
     androidTestImplementation(project(":test-shared"))
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
@@ -155,7 +155,7 @@ tasks.register<JacocoReport>("jacocoInstrumentedTestReport") {
         files("src/main/kotlin", "src/main/java")
     )
     classDirectories.setFrom(files(debugTree, kotlinDebugTree))
-    
+
     executionData.setFrom(
         fileTree(layout.buildDirectory) {
             include(
@@ -209,42 +209,42 @@ tasks.register("setupDirectories") {
 
 tasks.register("downloadNativeLibraries") {
     dependsOn("setupDirectories")
-    
+
     doLast {
         println("Using C2PA version: $c2paVersion")
         val downloadDir = file("${rootDir}/downloads")
         downloadDir.mkdirs()
-        
+
         var headerDownloaded = false
-        
+
         architectures.forEach { (arch, target) ->
             val libDir = file("src/main/jniLibs/$arch")
             val soFile = file("$libDir/libc2pa_c.so")
-            
+
             if (!soFile.exists()) {
                 println("Downloading C2PA library for $arch...")
-                
+
                 val zipFile = file("$downloadDir/$arch.zip")
                 val extractDir = file("$downloadDir/$arch")
-                
+
                 // Download the zip file
                 val url = "https://github.com/contentauth/c2pa-rs/releases/download/c2pa-$c2paVersion/c2pa-$c2paVersion-$target.zip"
                 println("Downloading from: $url")
                 ant.invokeMethod("get", mapOf("src" to url, "dest" to zipFile, "skipexisting" to "true"))
-                
+
                 // Extract the zip file
                 ant.invokeMethod("unzip", mapOf("src" to zipFile, "dest" to extractDir, "overwrite" to "true"))
-                
+
                 // Copy the .so file
                 file("$extractDir/lib/libc2pa_c.so").copyTo(soFile, overwrite = true)
-                
+
                 // Copy header file from first architecture
                 if (!headerDownloaded) {
                     val headerFile = file("$extractDir/include/c2pa.h")
                     if (headerFile.exists()) {
                         val destHeader = file("src/main/jni/c2pa.h")
                         headerFile.copyTo(destHeader, overwrite = true)
-                        
+
                         // Patch the header file
                         val content = destHeader.readText()
                         val patchedContent = content.replace(
@@ -252,7 +252,7 @@ tasks.register("downloadNativeLibraries") {
                             "typedef struct C2paSigner { } C2paSigner;"
                         )
                         destHeader.writeText(patchedContent)
-                        
+
                         headerDownloaded = true
                         println("Patched c2pa.h header file")
                     }
@@ -276,13 +276,13 @@ tasks.register("cleanDownloadedLibraries") {
         architectures.keys.forEach { arch ->
             file("src/main/jniLibs/$arch/libc2pa_c.so").delete()
         }
-        
+
         // Remove header file
         file("src/main/jni/c2pa.h").delete()
-        
+
         // Remove downloads directory
         file("${rootDir}/downloads").deleteRecursively()
-        
+
         println("Cleaned downloaded native libraries")
     }
 }
