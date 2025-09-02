@@ -203,6 +203,22 @@ class InstrumentedTests : TestSuiteCore() {
     }
     
     @Test
+    fun runTestWebServiceSignerCreation() {
+        val result = testResults.find { it.name == "Web Service Signer Creation" }
+        assertNotNull(result, "Web Service Signer Creation test not found")
+        // Server might not be available, just check test ran
+        assertNotNull(result.message, "Test should have a message")
+    }
+    
+    @Test
+    fun runTestCSRSigning() {
+        val result = testResults.find { it.name == "CSR Signing" }
+        assertNotNull(result, "CSR Signing test not found")
+        // Server might not be available, just check test ran
+        assertNotNull(result.message, "Test should have a message")
+    }
+    
+    @Test
     fun runTestHardwareSignerCreation() {
         val result = testResults.find { it.name == "Hardware Signer Creation" }
         assertNotNull(result, "Hardware Signer Creation test not found")

@@ -579,6 +579,7 @@ class HardwareSigningTestSuite(private val context: Context) {
             )
             
             val signer = HardwareSecurity.createStrongBoxSignerWithCSR(
+                algorithm = SigningAlgorithm.ES256,
                 strongBoxConfig = strongBoxConfig,
                 certificateConfig = certConfig,
                 signingServerUrl = serverUrl

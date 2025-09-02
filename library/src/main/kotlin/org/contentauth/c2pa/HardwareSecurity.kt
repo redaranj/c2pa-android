@@ -13,103 +13,94 @@ import java.security.*
 import java.security.cert.Certificate
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.RSAKeyGenParameterSpec
+import java.util.Date
 import java.util.concurrent.Executor
 import javax.crypto.Cipher
+import javax.security.auth.x500.X500Principal
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 
 /**
  * StrongBox signer configuration
- * StrongBox is Android's hardware security module
+ * StrongBox is Android's hardware security module (equivalent to iOS Secure Enclave)
  */
 @RequiresApi(Build.VERSION_CODES.P)
 data class StrongBoxSignerConfig(
     val keyTag: String,
-    val accessControl: Int = KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+    val accessControl: Int = KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
+    val requireUserAuthentication: Boolean = false
 )
 
 /**
- * StrongBox Signing Extension
+ * StrongBox Signing Extension - mirrors iOS Secure Enclave implementation
  */
 @RequiresApi(Build.VERSION_CODES.P)
-fun Signer(
+fun Signer.Companion.withStrongBox(
     algorithm: SigningAlgorithm,
     certificateChainPEM: String,
     tsaURL: String? = null,
     strongBoxConfig: StrongBoxSignerConfig
 ): Signer {
-    if (algorithm != SigningAlgorithm.ES256) {
-        throw C2PAError.Api("StrongBox only supports ES256 (P-256)")
+    require(algorithm == SigningAlgorithm.ES256) {
+        "StrongBox only supports ES256 (P-256)"
     }
+
+    val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     
-    val keyStore = KeyStore.getInstance("AndroidKeyStore")
-    keyStore.load(null)
-    
-    // Check if key already exists
-    var privateKey: PrivateKey? = null
-    if (keyStore.containsAlias(strongBoxConfig.keyTag)) {
-        privateKey = keyStore.getKey(strongBoxConfig.keyTag, null) as? PrivateKey
-    }
-    
-    // Create key if it doesn't exist
-    if (privateKey == null) {
-        privateKey = createStrongBoxKey(strongBoxConfig)
-    }
-    
-    return Signer.withCallback(algorithm, certificateChainPEM, tsaURL) { data ->
-        val signature = Signature.getInstance("SHA256withECDSA")
-        signature.initSign(privateKey)
-        signature.update(data)
-        signature.sign()
+    // Get or create StrongBox key
+    val privateKey = keyStore.getKey(strongBoxConfig.keyTag, null) as? PrivateKey
+        ?: createStrongBoxKey(strongBoxConfig)
+
+    return withCallback(algorithm, certificateChainPEM, tsaURL) { data ->
+        Signature.getInstance("SHA256withECDSA").run {
+            initSign(privateKey)
+            update(data)
+            sign()
+        }
     }
 }
 
 /**
- * Create a StrongBox key (internal helper)
+ * Create a StrongBox key - mirrors iOS createSecureEnclaveKey
  */
 @RequiresApi(Build.VERSION_CODES.P)
-private fun createStrongBoxKey(config: StrongBoxSignerConfig): PrivateKey {
-    val keyPairGenerator = KeyPairGenerator.getInstance(
-        KeyProperties.KEY_ALGORITHM_EC,
-        "AndroidKeyStore"
-    )
-    
-    val builder = KeyGenParameterSpec.Builder(
-        config.keyTag,
-        config.accessControl
-    ).apply {
-        setDigests(KeyProperties.DIGEST_SHA256)
-        setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
-        setUserAuthenticationRequired(true)
-        setIsStrongBoxBacked(true)
+private fun createStrongBoxKey(config: StrongBoxSignerConfig): PrivateKey =
+    KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore").run {
+        initialize(
+            KeyGenParameterSpec.Builder(config.keyTag, config.accessControl).apply {
+                setDigests(KeyProperties.DIGEST_SHA256)
+                setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
+                setUserAuthenticationRequired(config.requireUserAuthentication)
+                setIsStrongBoxBacked(true)
+                // Self-signed cert for the key
+                setCertificateSubject(X500Principal("CN=StrongBox Key"))
+                setCertificateSerialNumber(java.math.BigInteger.valueOf(1))
+                setCertificateNotBefore(Date())
+                setCertificateNotAfter(Date(System.currentTimeMillis() + 365L * 24 * 60 * 60 * 1000))
+            }.build()
+        )
+        generateKeyPair().private
     }
-    
-    keyPairGenerator.initialize(builder.build())
-    val keyPair = keyPairGenerator.generateKeyPair()
-    return keyPair.private
-}
 
 /**
- * Delete a StrongBox key
+ * Delete a StrongBox key - mirrors iOS deleteSecureEnclaveKey
  */
-fun deleteStrongBoxKey(keyTag: String): Boolean {
-    return try {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore")
-        keyStore.load(null)
-        keyStore.deleteEntry(keyTag)
-        true
-    } catch (e: Exception) {
-        false
+fun deleteStrongBoxKey(keyTag: String): Boolean = try {
+    KeyStore.getInstance("AndroidKeyStore").apply {
+        load(null)
+        deleteEntry(keyTag)
     }
+    true
+} catch (e: Exception) {
+    false
 }
 
 /**
- * Additional Android-specific hardware security utilities
- * Hardware security helper functions
+ * Hardware security utilities - mirrors iOS's Signer extensions
  */
 object HardwareSecurity {
-    
+
     /**
      * Creates a CSR for a hardware-backed key and submits it to the signing server
      * Returns a Signer configured with the signed certificate
@@ -125,14 +116,14 @@ object HardwareSecurity {
         // Generate hardware-backed key if it doesn't exist
         val keyStore = KeyStore.getInstance("AndroidKeyStore")
         keyStore.load(null)
-        
+
         if (!keyStore.containsAlias(keyAlias)) {
             CertificateManager.generateHardwareKey(keyAlias, requireStrongBox)
         }
-        
+
         // Generate CSR
         val csr = CertificateManager.createCSR(keyAlias, certificateConfig)
-        
+
         // Submit to signing server
         val client = SigningServerClient(signingServerUrl, apiKey)
         val metadata = SigningServerClient.CSRMetadata(
@@ -140,9 +131,9 @@ object HardwareSecurity {
             appVersion = "1.0.0", // Version can be passed as parameter if needed
             purpose = "c2pa-signing"
         )
-        
+
         val response = client.signCSR(csr, metadata).getOrThrow()
-        
+
         // Create signer with the certificate chain
         return Signer.withCallback(
             SigningAlgorithm.ES256,
@@ -157,20 +148,22 @@ object HardwareSecurity {
             signature.sign()
         }
     }
-    
+
     /**
      * Creates a CSR for a StrongBox key and submits it to the signing server
      */
     @RequiresApi(Build.VERSION_CODES.P)
     suspend fun createStrongBoxSignerWithCSR(
+        algorithm: SigningAlgorithm,
         strongBoxConfig: StrongBoxSignerConfig,
         certificateConfig: CertificateManager.CertificateConfig,
+        tsaURL: String? = null,
         signingServerUrl: String = SigningServerClient.LOCAL_SERVER,
         apiKey: String? = null
     ): Signer {
         // Generate CSR for StrongBox key
         val csr = CertificateManager.createStrongBoxCSR(strongBoxConfig, certificateConfig)
-        
+
         // Submit to signing server
         val client = SigningServerClient(signingServerUrl, apiKey)
         val metadata = SigningServerClient.CSRMetadata(
@@ -178,77 +171,72 @@ object HardwareSecurity {
             appVersion = "1.0.0", // Version can be passed as parameter if needed
             purpose = "strongbox-signing"
         )
-        
+
         val response = client.signCSR(csr, metadata).getOrThrow()
-        
-        // Create signer with the certificate chain and StrongBox key
-        return Signer(
-            SigningAlgorithm.ES256,
-            response.certificateChain,
-            null,
-            strongBoxConfig
-        )
+
+        // Create signer with the certificate chain and StrongBox key using callback
+        return Signer.withCallback(
+            algorithm = algorithm,
+            certificateChainPEM = response.certificateChain,
+            tsaURL = tsaURL
+        ) { data ->
+            // Sign with StrongBox key
+            val keyStore = KeyStore.getInstance("AndroidKeyStore")
+            keyStore.load(null)
+            val privateKey = keyStore.getKey(strongBoxConfig.keyTag, null) as PrivateKey
+            
+            val signature = Signature.getInstance("SHA256withECDSA")
+            signature.initSign(privateKey)
+            signature.update(data)
+            signature.sign()
+        }
     }
-    
+
     /**
-     * Check if StrongBox is available on this device
+     * Check if StrongBox is available (equivalent to iOS Secure Enclave check)
      */
     @RequiresApi(Build.VERSION_CODES.P)
-    fun isStrongBoxAvailable(context: Context): Boolean {
-        return context.packageManager.hasSystemFeature("android.hardware.strongbox_keystore")
-    }
-    
+    fun isStrongBoxAvailable(context: Context): Boolean =
+        context.packageManager.hasSystemFeature("android.hardware.strongbox_keystore")
+
     /**
      * Check if hardware-backed keystore is available
      */
-    fun isHardwareBackedKeystoreAvailable(): Boolean {
-        return try {
-            val keyStore = KeyStore.getInstance("AndroidKeyStore")
-            keyStore.load(null)
-            true
-        } catch (e: Exception) {
-            false
-        }
+    fun isHardwareBackedKeystoreAvailable(): Boolean = try {
+        KeyStore.getInstance("AndroidKeyStore").load(null)
+        true
+    } catch (e: Exception) {
+        false
     }
-    
+
     /**
      * Check if a key is hardware-backed
      */
     @RequiresApi(Build.VERSION_CODES.M)
-    fun isKeyHardwareBacked(keyAlias: String): Boolean {
-        return try {
-            val keyStore = KeyStore.getInstance("AndroidKeyStore")
-            keyStore.load(null)
-            
-            val privateKey = keyStore.getKey(keyAlias, null) as? PrivateKey ?: return false
-            val factory = KeyFactory.getInstance(privateKey.algorithm, "AndroidKeyStore")
-            val keyInfo = factory.getKeySpec(privateKey, KeyInfo::class.java)
-            
-            keyInfo.isInsideSecureHardware
-        } catch (e: Exception) {
-            false
-        }
+    fun isKeyHardwareBacked(keyAlias: String): Boolean = try {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val privateKey = keyStore.getKey(keyAlias, null) as? PrivateKey ?: return false
+        val keyInfo = KeyFactory.getInstance(privateKey.algorithm, "AndroidKeyStore")
+            .getKeySpec(privateKey, KeyInfo::class.java)
+        keyInfo.isInsideSecureHardware
+    } catch (e: Exception) {
+        false
     }
-    
+
     /**
      * Check if a key is StrongBox-backed
      */
     @RequiresApi(Build.VERSION_CODES.S)
-    fun isKeyStrongBoxBacked(keyAlias: String): Boolean {
-        return try {
-            val keyStore = KeyStore.getInstance("AndroidKeyStore")
-            keyStore.load(null)
-            
-            val privateKey = keyStore.getKey(keyAlias, null) as? PrivateKey ?: return false
-            val factory = KeyFactory.getInstance(privateKey.algorithm, "AndroidKeyStore")
-            val keyInfo = factory.getKeySpec(privateKey, KeyInfo::class.java)
-            
-            keyInfo.securityLevel == KeyProperties.SECURITY_LEVEL_STRONGBOX
-        } catch (e: Exception) {
-            false
-        }
+    fun isKeyStrongBoxBacked(keyAlias: String): Boolean = try {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val privateKey = keyStore.getKey(keyAlias, null) as? PrivateKey ?: return false
+        val keyInfo = KeyFactory.getInstance(privateKey.algorithm, "AndroidKeyStore")
+            .getKeySpec(privateKey, KeyInfo::class.java)
+        keyInfo.securityLevel == KeyProperties.SECURITY_LEVEL_STRONGBOX
+    } catch (e: Exception) {
+        false
     }
-    
+
     /**
      * Create a signer with biometric authentication
      */
@@ -263,7 +251,7 @@ object HardwareSecurity {
         promptSubtitle: String = "Use your biometric credential to sign the document",
         promptDescription: String? = null
     ): Signer = suspendCoroutine { continuation ->
-        
+
         val executor: Executor = ContextCompat.getMainExecutor(activity)
         val biometricPrompt = BiometricPrompt(activity, executor,
             object : BiometricPrompt.AuthenticationCallback() {
@@ -272,7 +260,7 @@ object HardwareSecurity {
                         C2PAError.Api("Biometric authentication error: $errString")
                     )
                 }
-                
+
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     try {
                         val signer = Signer.withKeystore(
@@ -286,14 +274,14 @@ object HardwareSecurity {
                         continuation.resumeWithException(e)
                     }
                 }
-                
+
                 override fun onAuthenticationFailed() {
                     continuation.resumeWithException(
                         C2PAError.Api("Biometric authentication failed")
                     )
                 }
             })
-        
+
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle(promptTitle)
             .setSubtitle(promptSubtitle)
@@ -302,7 +290,7 @@ object HardwareSecurity {
             }
             .setNegativeButtonText("Cancel")
             .build()
-        
+
         biometricPrompt.authenticate(promptInfo)
     }
 }

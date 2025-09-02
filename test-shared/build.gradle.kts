@@ -47,4 +47,7 @@ dependencies {
     // Coroutines for suspend functions
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    
+    // OkHttp for web service tests
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
