@@ -1778,6 +1778,21 @@ abstract class TestSuiteCore {
                 ))
             }
         }
+        
+        // Add web service tests
+        try {
+            val webServiceTestSuite = WebServiceTestSuite(getContext())
+            val webServiceResults = webServiceTestSuite.runAllTests()
+            results.addAll(webServiceResults)
+        } catch (e: Exception) {
+            // If web service tests fail to initialize, add an error result
+            results.add(TestResult(
+                "Web Service Tests",
+                false,
+                "Failed to run web service tests: ${e.message}",
+                e.stackTraceToString()
+            ))
+        }
 
         results
     }

@@ -1,0 +1,14 @@
+# Copied source files
+src/main/kotlin/org/contentauth/c2pa/C2PA.kt
+
+# Native libraries
+libs/*.dylib
+libs/*.so
+
+# Build output
+build/
+out/
+
+# IDE files
+.idea/
+*.iml

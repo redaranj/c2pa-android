@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import org.contentauth.c2pa.test.shared.TestSuiteCore
+import org.contentauth.c2pa.test.shared.WebServiceTestSuite
 import java.io.File
 
 // Type alias for convenience
@@ -89,19 +90,38 @@ fun TestScreen(modifier: Modifier = Modifier) {
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        Button(
-            onClick = {
-                coroutineScope.launch {
-                    isRunning = true
-                    val testSuite = AndroidTestSuite(context)
-                    testResults = testSuite.runAllTests()
-                    isRunning = false
-                }
-            },
-            enabled = !isRunning,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(if (isRunning) "Running Tests..." else "Run All Tests")
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = {
+                    coroutineScope.launch {
+                        isRunning = true
+                        val testSuite = AndroidTestSuite(context)
+                        testResults = testSuite.runAllTests()
+                        isRunning = false
+                    }
+                },
+                enabled = !isRunning,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(if (isRunning) "Running..." else "Core Tests")
+            }
+            
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            Button(
+                onClick = {
+                    coroutineScope.launch {
+                        isRunning = true
+                        val webServiceTests = WebServiceTestSuite(context)
+                        testResults = webServiceTests.runAllTests()
+                        isRunning = false
+                    }
+                },
+                enabled = !isRunning,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(if (isRunning) "Running..." else "Web Service Tests")
+            }
         }
         
         Spacer(modifier = Modifier.height(16.dp))

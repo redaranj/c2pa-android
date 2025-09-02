@@ -61,7 +61,7 @@ clean:
 # File to store the server PID
 SIGNING_SERVER_PID_FILE := .signing-server.pid
 
-# Build the signing server
+# Build the signing server (downloads native libs and compiles JNI)
 signing-server-build:
 	@echo "Building signing server..."
 	@./gradlew :signing-server:build
