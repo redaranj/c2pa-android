@@ -18,6 +18,39 @@ import java.security.cert.Certificate
 import java.util.Base64
 
 /**
+ * Load native C2PA libraries.
+ * Safe to call multiple times - System.loadLibrary handles duplicates.
+ */
+internal fun loadC2PALibraries() {
+    try {
+        // Detect if we're running on Android or JVM
+        val isAndroid = try {
+            Class.forName("android.os.Build")
+            true
+        } catch (e: ClassNotFoundException) {
+            false
+        }
+        
+        if (isAndroid) {
+            // Android: Load from APK
+            System.loadLibrary("c2pa_c")
+            System.loadLibrary("c2pa_jni")
+        } else {
+            // JVM (signing server): Load from file system using system properties
+            val c2paServerLib = System.getProperty("c2pa.server.lib.path") 
+                ?: throw UnsatisfiedLinkError("c2pa.server.lib.path system property not set")
+            val c2paServerJni = System.getProperty("c2pa.server.jni.path")
+                ?: throw UnsatisfiedLinkError("c2pa.server.jni.path system property not set")
+            
+            System.load(c2paServerLib)
+            System.load(c2paServerJni)
+        }
+    } catch (e: UnsatisfiedLinkError) {
+        // Libraries might already be loaded, ignore
+    }
+}
+
+/**
  * Execute a C2PA operation with standard error handling
  */
 internal inline fun <T : Any> executeC2PAOperation(
@@ -73,33 +106,7 @@ val c2paVersion: String by lazy {
  */
 object C2PA {
     init {
-        // Detect if we're running on Android or JVM
-        val isAndroid = try {
-            Class.forName("android.os.Build")
-            true
-        } catch (e: ClassNotFoundException) {
-            false
-        }
-        
-        if (isAndroid) {
-            // Android: Load from APK
-            System.loadLibrary("c2pa_c")
-            System.loadLibrary("c2pa_jni")
-        } else {
-            // JVM (signing server): Load from file system
-            val c2paServerLib = System.getProperty("c2pa.server.lib.path")
-            val c2paServerJni = System.getProperty("c2pa.server.jni.path")
-            
-            if (c2paServerLib != null && c2paServerJni != null) {
-                System.load(c2paServerLib)
-                System.load(c2paServerJni)
-            } else {
-                // Fallback to relative paths
-                val projectRoot = System.getProperty("user.dir")
-                System.load("$projectRoot/signing-server/libs/libc2pa_c.dylib")
-                System.load("$projectRoot/signing-server/libs/libc2pa_server_jni.dylib")
-            }
-        }
+        loadC2PALibraries()
     }
 
     /**
@@ -320,6 +327,10 @@ abstract class Stream : Closeable {
 class Reader internal constructor(private var ptr: Long) : Closeable {
     
     companion object {
+        init {
+            loadC2PALibraries()
+        }
+        
         /**
          * Create a reader from a stream
          */
@@ -401,6 +412,10 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
     data class SignResult(val size: Long, val manifestBytes: ByteArray?)
     
     companion object {
+        init {
+            loadC2PALibraries()
+        }
+        
         /**
          * Create a builder from JSON
          */
@@ -573,6 +588,10 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
 class Signer internal constructor(internal var ptr: Long) : Closeable {
     
     companion object {
+        init {
+            loadC2PALibraries()
+        }
+        
         /**
          * Create signer from certificates and private key
          */
