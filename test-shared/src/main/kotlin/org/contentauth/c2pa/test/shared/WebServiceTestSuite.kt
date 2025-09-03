@@ -10,7 +10,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.contentauth.c2pa.*
-import org.contentauth.c2pa.test.shared.MemoryStream
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
@@ -162,7 +161,7 @@ class WebServiceTestSuite(private val context: Context) {
                 try {
                     val manifest = Reader.fromStream(
                         format = "image/jpeg",
-                        stream = MemoryStream(responseData).stream
+                        stream = ByteArrayStream(responseData)
                     ).use { reader ->
                         reader.json()
                     }

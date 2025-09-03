@@ -6,6 +6,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import org.contentauth.c2pa.Builder
+import org.contentauth.c2pa.ByteArrayStream
 import org.contentauth.c2pa.C2PA
 import org.contentauth.c2pa.C2PAError
 import org.contentauth.c2pa.SeekMode
@@ -197,9 +198,9 @@ abstract class TestSuiteCore {
     suspend fun testStreamAPI(): TestResult = withContext(Dispatchers.IO) {
         runTest("Stream API") {
             val testImageData = loadResourceAsBytes("adobe_20220124_ci")
-            val memStream = MemoryStream(testImageData)
+            val memStream = ByteArrayStream(testImageData)
             try {
-                val reader = Reader.fromStream("image/jpeg", memStream.stream)
+                val reader = Reader.fromStream("image/jpeg", memStream)
                 try {
                     val json = reader.json()
                     TestResult("Stream API", json.isNotEmpty(), "Stream API working", json.take(200))
@@ -227,7 +228,7 @@ abstract class TestSuiteCore {
                 val builder = Builder.fromJson(manifestJson)
                 try {
                     val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
-                    val sourceStream = MemoryStream(sourceImageData)
+                    val sourceStream = ByteArrayStream(sourceImageData)
 
                     val fileTest = File.createTempFile("c2pa-stream-api-test",".jpg")
                     val destStream = FileStream(fileTest)
@@ -239,7 +240,7 @@ abstract class TestSuiteCore {
                         val signer = Signer.fromInfo(signerInfo)
 
                         try {
-                            val result = builder.sign("image/jpeg", sourceStream.stream, destStream, signer)
+                            val result = builder.sign("image/jpeg", sourceStream, destStream, signer)
 
                             val manifest = C2PA.readFile(fileTest.absolutePath)
                             val json = if (manifest != null) JSONObject(manifest) else null
@@ -383,9 +384,9 @@ abstract class TestSuiteCore {
         // Test 4: Stream API
         results.add(runTest("Stream API") {
             val testImageData = loadResourceAsBytes("adobe_20220124_ci")
-            val memStream = MemoryStream(testImageData)
+            val memStream = ByteArrayStream(testImageData)
             try {
-                val reader = Reader.fromStream("image/jpeg", memStream.stream)
+                val reader = Reader.fromStream("image/jpeg", memStream)
                 try {
                     val json = reader.json()
                     TestResult("Stream API", json.isNotEmpty(), "Stream API working", json.take(200))
@@ -412,7 +413,7 @@ abstract class TestSuiteCore {
                 val builder = Builder.fromJson(manifestJson)
                 try {
                     val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
-                    val sourceStream = MemoryStream(sourceImageData)
+                    val sourceStream = ByteArrayStream(sourceImageData)
 
                     val fileTest = File.createTempFile("c2pa-stream-api-test",".jpg")
                     val destStream = FileStream(fileTest)
@@ -424,7 +425,7 @@ abstract class TestSuiteCore {
                         val signer = Signer.fromInfo(signerInfo)
 
                         try {
-                            val result = builder.sign("image/jpeg", sourceStream.stream, destStream, signer)
+                            val result = builder.sign("image/jpeg", sourceStream, destStream, signer)
 
                             val manifest = C2PA.readFile(fileTest.absolutePath)
                             val json = if (manifest != null) JSONObject(manifest) else null
@@ -462,9 +463,9 @@ abstract class TestSuiteCore {
                 val builder = Builder.fromJson(manifestJson)
                 try {
                     builder.setNoEmbed()
-                    val archiveStream = MemoryStream()
+                    val archiveStream = ByteArrayStream()
                     try {
-                        builder.toArchive(archiveStream.stream)
+                        builder.toArchive(archiveStream)
                         val data = archiveStream.getData()
                         val success = data.isNotEmpty()
                         TestResult(
@@ -572,10 +573,10 @@ abstract class TestSuiteCore {
         // Test 9: Resource Reading
         results.add(runTest("Resource Reading") {
             val testImageData = loadResourceAsBytes("adobe_20220124_ci")
-            val stream = MemoryStream(testImageData)
+            val stream = ByteArrayStream(testImageData)
             try {
                 try {
-                    val reader = Reader.fromStream("image/jpeg", stream.stream)
+                    val reader = Reader.fromStream("image/jpeg", stream)
                     try {
                         val json = reader.json()
                         val manifestJson = JSONObject(json)
@@ -641,9 +642,9 @@ abstract class TestSuiteCore {
                         }
 
                         if (resourceUri != null) {
-                            val resourceStream = MemoryStream()
+                            val resourceStream = ByteArrayStream()
                             try {
-                                reader.resource(resourceUri, resourceStream.stream)
+                                reader.resource(resourceUri, resourceStream)
                                 val resourceData = resourceStream.getData()
                                 val success = resourceData.isNotEmpty()
                                 TestResult(
@@ -693,9 +694,9 @@ abstract class TestSuiteCore {
                 try {
                     builder.setRemoteURL("https://example.com/manifest.c2pa")
                     builder.setNoEmbed()
-                    val archive = MemoryStream()
+                    val archive = ByteArrayStream()
                     try {
-                        builder.toArchive(archive.stream)
+                        builder.toArchive(archive)
                         val archiveData = archive.getData()
                         val archiveStr = String(archiveData)
                         val success = archiveStr.contains("https://example.com/manifest.c2pa")
@@ -727,13 +728,13 @@ abstract class TestSuiteCore {
                 val builder = Builder.fromJson(manifestJson)
                 try {
                     val thumbnailData = createSimpleJPEGThumbnail()
-                    val thumbnailStream = MemoryStream(thumbnailData)
+                    val thumbnailStream = ByteArrayStream(thumbnailData)
                     try {
-                        builder.addResource("thumbnail", thumbnailStream.stream)
+                        builder.addResource("thumbnail", thumbnailStream)
                         builder.setNoEmbed()
-                        val archive = MemoryStream()
+                        val archive = ByteArrayStream()
                         try {
-                            builder.toArchive(archive.stream)
+                            builder.toArchive(archive)
                             val archiveStr = String(archive.getData())
                             val success = archiveStr.contains("thumbnail")
                             TestResult(
@@ -768,13 +769,13 @@ abstract class TestSuiteCore {
                 try {
                     val ingredientJson = """{"title": "Test Ingredient", "format": "image/jpeg"}"""
                     val ingredientImageData = loadResourceAsBytes("pexels_asadphoto_457882")
-                    val ingredientStream = MemoryStream(ingredientImageData)
+                    val ingredientStream = ByteArrayStream(ingredientImageData)
                     try {
-                        builder.addIngredient(ingredientJson, "image/jpeg", ingredientStream.stream)
+                        builder.addIngredient(ingredientJson, "image/jpeg", ingredientStream)
                         builder.setNoEmbed()
-                        val archive = MemoryStream()
+                        val archive = ByteArrayStream()
                         try {
-                            builder.toArchive(archive.stream)
+                            builder.toArchive(archive)
                             val archiveStr = String(archive.getData())
                             val success = archiveStr.contains("\"title\":\"Test Ingredient\"")
                             TestResult(
@@ -808,21 +809,21 @@ abstract class TestSuiteCore {
                 val originalBuilder = Builder.fromJson(manifestJson)
                 try {
                     val thumbnailData = createSimpleJPEGThumbnail()
-                    val thumbnailStream = MemoryStream(thumbnailData)
-                    originalBuilder.addResource("test_thumbnail", thumbnailStream.stream)
+                    val thumbnailStream = ByteArrayStream(thumbnailData)
+                    originalBuilder.addResource("test_thumbnail", thumbnailStream)
                     thumbnailStream.close()
 
                     originalBuilder.setNoEmbed()
-                    val archiveStream = MemoryStream()
+                    val archiveStream = ByteArrayStream()
                     try {
-                        originalBuilder.toArchive(archiveStream.stream)
+                        originalBuilder.toArchive(archiveStream)
                         val archiveData = archiveStream.getData()
 
-                        val newArchiveStream = MemoryStream(archiveData)
+                        val newArchiveStream = ByteArrayStream(archiveData)
 
                         var builderCreated = false
                         try {
-                            val newBuilder = Builder.fromArchive(newArchiveStream.stream)
+                            val newBuilder = Builder.fromArchive(newArchiveStream)
                             builderCreated = true
                             newBuilder.close()
                         } catch (e: Exception) {
@@ -868,7 +869,7 @@ abstract class TestSuiteCore {
                 val builder = Builder.fromJson(manifestJson)
                 try {
                     val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
-                    val sourceStream = MemoryStream(sourceImageData)
+                    val sourceStream = ByteArrayStream(sourceImageData)
                     val fileTest = File.createTempFile("c2pa-manifest-direct-sign", ".jpg")
                     val destStream = FileStream(fileTest)
 
@@ -876,18 +877,18 @@ abstract class TestSuiteCore {
                     val keyPem = loadResourceAsString("es256_private")
                     val signer = Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem))
 
-                    val signResult = builder.sign("image/jpeg", sourceStream.stream, destStream, signer)
+                    val signResult = builder.sign("image/jpeg", sourceStream, destStream, signer)
 
                     sourceStream.close()
                     destStream.close()
                     signer.close()
 
                     val freshImageData = loadResourceAsBytes("pexels_asadphoto_457882")
-                    val freshStream = MemoryStream(freshImageData)
+                    val freshStream = ByteArrayStream(freshImageData)
 
                     val success = if (signResult.manifestBytes != null) {
                         try {
-                            val reader = Reader.fromManifestAndStream("image/jpeg", freshStream.stream, signResult.manifestBytes!!)
+                            val reader = Reader.fromManifestAndStream("image/jpeg", freshStream, signResult.manifestBytes!!)
                             try {
                                 val json = reader.json()
                                 json.contains("\"c2pa.test\"")
@@ -930,7 +931,7 @@ abstract class TestSuiteCore {
                 val builder = Builder.fromJson(manifestJson)
                 try {
                     val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
-                    val sourceStream = MemoryStream(sourceImageData)
+                    val sourceStream = ByteArrayStream(sourceImageData)
                     val fileTest = File.createTempFile("c2pa-callback-signer", ".jpg")
                     val destStream = FileStream(fileTest)
 
@@ -946,7 +947,7 @@ abstract class TestSuiteCore {
 
                     try {
                         val reserveSize = callbackSigner.reserveSize()
-                        val result = builder.sign("image/jpeg", sourceStream.stream, destStream, callbackSigner)
+                        val result = builder.sign("image/jpeg", sourceStream, destStream, callbackSigner)
                         val signSucceeded = result.size > 0
 
                         val (manifest, signatureVerified) = if (signSucceeded) {
@@ -1048,9 +1049,9 @@ abstract class TestSuiteCore {
                 val builder = Builder.fromJson(manifestJson)
                 try {
                     builder.setNoEmbed()
-                    val writeOnlyStream = MemoryStream()
+                    val writeOnlyStream = ByteArrayStream()
                     try {
-                        builder.toArchive(writeOnlyStream.stream)
+                        builder.toArchive(writeOnlyStream)
                         val data = writeOnlyStream.getData()
                         val success = data.isNotEmpty()
 
@@ -1159,75 +1160,7 @@ abstract class TestSuiteCore {
             }
         })
 
-        // Test 20: Web Service Signer Creation
-        results.add(runTest("Web Service Real Signing & Verification") {
-            val manifestJson = """{
-                "claim_generator": "test_app/1.0",
-                "assertions": [{"label": "c2pa.test", "data": {"test": true}}]
-            }"""
-
-            try {
-                val certPem = loadResourceAsString("es256_certs")
-                val keyPem = loadResourceAsString("es256_private")
-
-                val mockServiceUrl = "http://mock.signing.service/sign"
-
-                val mockService = MockSigningService { data ->
-                    SigningHelper.signWithPEMKey(data, keyPem, "ES256")
-                }
-
-                MockSigningService.register(mockServiceUrl, mockService)
-
-                try {
-                    val builder = Builder.fromJson(manifestJson)
-                    try {
-                        val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
-                        val sourceStream = MemoryStream(sourceImageData)
-                        val fileTest = File.createTempFile("c2pa-web-service-sign", ".jpg")
-                        val destStream = FileStream(fileTest)
-
-                        var webServiceCalled = false
-
-                        val webServiceSigner = WebServiceSignerHelper.createWebServiceSigner(
-                            serviceUrl = mockServiceUrl,
-                            algorithm = SigningAlgorithm.ES256,
-                            certsPem = certPem,
-                            tsaUrl = null
-                        )
-
-                        try {
-                            val result = builder.sign("image/jpeg", sourceStream.stream, destStream, webServiceSigner)
-                            webServiceCalled = true
-
-                            val manifest = C2PA.readFile(fileTest.absolutePath)
-                            val hasManifest = manifest != null
-
-                            val success = webServiceCalled && hasManifest && result.size > 0
-
-                            TestResult(
-                                "Web Service Real Signing & Verification",
-                                success,
-                                if (success) "Web service signing successful" else "Web service signing failed",
-                                "Mock service used, Result size: ${result.size}, Has manifest: $hasManifest"
-                            )
-                        } finally {
-                            webServiceSigner.close()
-                            sourceStream.close()
-                            destStream.close()
-                            fileTest.delete()
-                        }
-                    } finally {
-                        builder.close()
-                    }
-                } finally {
-                    MockSigningService.unregister(mockServiceUrl)
-                }
-            } catch (e: Exception) {
-                TestResult("Web Service Real Signing & Verification", false, "Failed with exception", e.toString())
-            }
-        })
-
-        // Test 21: Hardware Signer Creation
+        // Test 20: Hardware Signer Creation
         results.add(runTest("Hardware Signer Creation") {
             val hasStrongBox = getContext().packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_STRONGBOX_KEYSTORE)
 
@@ -1283,7 +1216,7 @@ abstract class TestSuiteCore {
             )
         })
 
-        // Test 22: StrongBox Signer Creation
+        // Test 21: StrongBox Signer Creation
         results.add(runTest("StrongBox Signer Creation") {
             val hasStrongBox = getContext().packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_STRONGBOX_KEYSTORE)
 
@@ -1327,7 +1260,7 @@ abstract class TestSuiteCore {
             )
         })
 
-        // Test 23: Signing Algorithm Tests
+        // Test 22: Signing Algorithm Tests
         results.add(runTest("Signing Algorithm Tests") {
             val algorithms = listOf("es256")
             val resultPerAlg = mutableListOf<String>()
@@ -1338,7 +1271,7 @@ abstract class TestSuiteCore {
                     val builder = Builder.fromJson(manifestJson)
 
                     val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
-                    val sourceStream = MemoryStream(sourceImageData)
+                    val sourceStream = ByteArrayStream(sourceImageData)
                     val fileTest = File.createTempFile("c2pa-algorithm-$alg", ".jpg")
                     val destStream = FileStream(fileTest)
 
@@ -1349,7 +1282,7 @@ abstract class TestSuiteCore {
                     val signer = Signer.fromInfo(signerInfo)
 
                     try {
-                        builder.sign("image/jpeg", sourceStream.stream, destStream, signer)
+                        builder.sign("image/jpeg", sourceStream, destStream, signer)
                         val ok = C2PA.readFile(fileTest.absolutePath) != null
                         resultPerAlg.add("$alg:${if(ok) "ok" else "fail"}")
                     } finally {
@@ -1373,7 +1306,7 @@ abstract class TestSuiteCore {
             )
         })
 
-        // Test 24: Signer Reserve Size
+        // Test 23: Signer Reserve Size
         results.add(runTest("Signer Reserve Size") {
             val certPem = loadResourceAsString("es256_certs")
             val keyPem = loadResourceAsString("es256_private")
@@ -1394,16 +1327,16 @@ abstract class TestSuiteCore {
             }
         })
 
-        // Test 25: Reader Resource Error Handling
+        // Test 24: Reader Resource Error Handling
         results.add(runTest("Reader Resource Error Handling") {
             val testImageData = loadResourceAsBytes("adobe_20220124_ci")
-            val stream = MemoryStream(testImageData)
+            val stream = ByteArrayStream(testImageData)
             try {
-                val reader = Reader.fromStream("image/jpeg", stream.stream)
+                val reader = Reader.fromStream("image/jpeg", stream)
                 try {
-                    val resourceStream = MemoryStream()
+                    val resourceStream = ByteArrayStream()
                     try {
-                        reader.resource("non_existent_resource", resourceStream.stream)
+                        reader.resource("non_existent_resource", resourceStream)
                         TestResult(
                             "Reader Resource Error Handling",
                             false,
@@ -1428,14 +1361,14 @@ abstract class TestSuiteCore {
             }
         })
 
-        // Test 26: Error Enum Coverage
+        // Test 25: Error Enum Coverage
         results.add(runTest("Error Enum Coverage") {
             val errors = mutableListOf<String>()
             var caughtApiError: C2PAError? = null
             var caughtNegativeError: C2PAError? = null
 
             try {
-                val reader = Reader.fromStream("invalid/format", MemoryStream(ByteArray(0)).stream)
+                val reader = Reader.fromStream("invalid/format", ByteArrayStream(ByteArray(0)))
                 reader.close()
             } catch (e: C2PAError.Api) {
                 caughtApiError = e
@@ -1491,7 +1424,7 @@ abstract class TestSuiteCore {
             )
         })
 
-        // Test 27: Load Settings
+        // Test 26: Load Settings
         results.add(runTest("Load Settings") {
             val settingsJson = """{
                 "version_major": 1,
@@ -1541,7 +1474,7 @@ abstract class TestSuiteCore {
             )
         })
 
-        // Test 28: Sign File
+        // Test 27: Sign File
         results.add(runTest("Sign File") {
             val sourceFile = copyResourceToFile("pexels_asadphoto_457882", "source_signfile.jpg")
             val destFile = File(getContext().cacheDir, "dest_signfile.jpg")
@@ -1577,13 +1510,13 @@ abstract class TestSuiteCore {
             }
         })
 
-        // Test 29: JSON Round-trip
+        // Test 28: JSON Round-trip
         results.add(runTest("JSON Round-trip") {
             val testImageData = loadResourceAsBytes("adobe_20220124_ci")
-            val memStream = MemoryStream(testImageData)
+            val memStream = ByteArrayStream(testImageData)
 
             try {
-                val reader = Reader.fromStream("image/jpeg", memStream.stream)
+                val reader = Reader.fromStream("image/jpeg", memStream)
                 try {
                     val originalJson = reader.json()
                     val json1 = JSONObject(originalJson)
@@ -1699,8 +1632,8 @@ abstract class TestSuiteCore {
 
             // Test invalid format strings
             try {
-                val stream = MemoryStream(ByteArray(100))
-                Reader.fromStream("invalid/format", stream.stream)
+                val stream = ByteArrayStream(ByteArray(100))
+                Reader.fromStream("invalid/format", stream)
                 stream.close()
             } catch (e: C2PAError) {
                 errors.add("Invalid format caught: ${e.message}")

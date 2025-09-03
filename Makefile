@@ -1,6 +1,6 @@
-.PHONY: all clean setup library publish download-binaries tests coverage help run-test-app run-example-app \
-        signing-server-start signing-server-stop signing-server-status signing-server-build \
-        tests-with-server
+.PHONY: all clean setup library publish download-binaries tests coverage help test-app example-app \
+        run-test-app run-example-app signing-server-start signing-server-stop signing-server-status \
+        signing-server-build tests-with-server
 
 # Default target
 all: library
@@ -32,6 +32,18 @@ coverage:
 	@echo "Running instrumented tests with coverage..."
 	@./gradlew :library:createDebugCoverageReport :library:jacocoInstrumentedTestReport
 	@echo "Coverage report generated at library/build/reports/jacoco/jacocoInstrumentedTestReport/html/index.html"
+
+# Build test app
+test-app:
+	@echo "Building test app..."
+	@./gradlew :test-app:app:build
+	@echo "Test app build completed"
+
+# Build example app
+example-app:
+	@echo "Building example app..."
+	@./gradlew :example-app:app:build
+	@echo "Example app build completed"
 
 # Run test app
 run-test-app:
@@ -79,6 +91,14 @@ signing-server-start: signing-server-build
 	@echo "Starting signing server on port 8080..."
 	@nohup ./gradlew :signing-server:run > signing-server.log 2>&1 & \
 		echo $$! > $(SIGNING_SERVER_PID_FILE)
+
+# Run signing server in foreground (for development)
+signing-server-run:
+	@if [ ! -f "./gradlew" ]; then \
+		echo "Error: gradlew not found"; \
+		exit 1; \
+	fi
+	./gradlew :signing-server:build && ./gradlew :signing-server:run
 	@echo "Waiting for server to start..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
 		if curl -s http://localhost:8080/health > /dev/null 2>&1; then \
@@ -159,12 +179,15 @@ help:
 	@echo ""
 	@echo "Signing Server (for hardware signing tests):"
 	@echo "  signing-server-build  - Build the signing server"
+	@echo "  signing-server-run    - Run the signing server in foreground"
 	@echo "  signing-server-start  - Start the signing server in background"
 	@echo "  signing-server-stop   - Stop the signing server"
 	@echo "  signing-server-status - Check if signing server is running"
 	@echo "  signing-server-logs   - View signing server logs (tail -f)"
 	@echo ""
 	@echo "Apps:"
+	@echo "  test-app              - Build the test app"
+	@echo "  example-app           - Build the example app"
 	@echo "  run-test-app          - Install and run the test app"
 	@echo "  run-example-app       - Install and run the example app"
 	@echo ""

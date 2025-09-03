@@ -25,11 +25,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import androidx.compose.ui.graphics.Color
 import org.contentauth.c2pa.test.shared.TestSuiteCore
 import org.contentauth.c2pa.test.shared.WebServiceTestSuite
 import java.io.File
@@ -42,27 +42,27 @@ typealias TestResult = TestSuiteCore.TestResult
  * Extends TestSuiteCore to provide Android resource loading.
  */
 private class AndroidTestSuite(private val context: Context) : TestSuiteCore() {
-    
+
     override fun getContext(): Context = context
-    
+
     override fun loadResourceAsBytes(resourceName: String): ByteArray {
         // First try to load from shared resources
         val sharedResource = TestSuiteCore.loadSharedResourceAsBytes("$resourceName.jpg")
             ?: TestSuiteCore.loadSharedResourceAsBytes("$resourceName.pem")
             ?: TestSuiteCore.loadSharedResourceAsBytes("$resourceName.key")
-        
+
         return sharedResource ?: throw IllegalArgumentException("Resource not found: $resourceName")
     }
-    
+
     override fun loadResourceAsString(resourceName: String): String {
         // First try to load from shared resources
         val sharedResource = TestSuiteCore.loadSharedResourceAsString("$resourceName.jpg")
             ?: TestSuiteCore.loadSharedResourceAsString("$resourceName.pem")
             ?: TestSuiteCore.loadSharedResourceAsString("$resourceName.key")
-        
+
         return sharedResource ?: throw IllegalArgumentException("Resource not found: $resourceName")
     }
-    
+
     override fun copyResourceToFile(resourceName: String, fileName: String): File {
         val file = File(context.cacheDir, fileName)
         val resourceBytes = loadResourceAsBytes(resourceName)
@@ -77,7 +77,7 @@ fun TestScreen(modifier: Modifier = Modifier) {
     val coroutineScope = rememberCoroutineScope()
     var testResults by remember { mutableStateOf(listOf<TestResult>()) }
     var isRunning by remember { mutableStateOf(false) }
-    
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -87,9 +87,9 @@ fun TestScreen(modifier: Modifier = Modifier) {
             text = "C2PA Library Tests",
             style = MaterialTheme.typography.headlineMedium
         )
-        
+
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         Row(modifier = Modifier.fillMaxWidth()) {
             Button(
                 onClick = {
@@ -105,9 +105,9 @@ fun TestScreen(modifier: Modifier = Modifier) {
             ) {
                 Text(if (isRunning) "Running..." else "Core Tests")
             }
-            
+
             Spacer(modifier = Modifier.width(8.dp))
-            
+
             Button(
                 onClick = {
                     coroutineScope.launch {
@@ -123,9 +123,9 @@ fun TestScreen(modifier: Modifier = Modifier) {
                 Text(if (isRunning) "Running..." else "Web Service Tests")
             }
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -146,19 +146,19 @@ fun TestResultCard(result: TestResult) {
         TestSuiteCore.TestStatus.FAILED -> MaterialTheme.colorScheme.errorContainer
         TestSuiteCore.TestStatus.SKIPPED -> Color(0xFFFFF3E0) // Light amber/yellow
     }
-    
+
     val icon = when (result.status) {
         TestSuiteCore.TestStatus.PASSED -> "✓"
         TestSuiteCore.TestStatus.FAILED -> "✗"
         TestSuiteCore.TestStatus.SKIPPED -> "⊘"
     }
-    
+
     val iconColor = when (result.status) {
         TestSuiteCore.TestStatus.PASSED -> MaterialTheme.colorScheme.primary
         TestSuiteCore.TestStatus.FAILED -> MaterialTheme.colorScheme.error
         TestSuiteCore.TestStatus.SKIPPED -> Color(0xFFF57C00) // Amber/Orange
     }
-    
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -182,14 +182,14 @@ fun TestResultCard(result: TestResult) {
                     style = MaterialTheme.typography.titleMedium
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(4.dp))
-            
+
             Text(
                 text = result.message,
                 style = MaterialTheme.typography.bodyMedium
             )
-            
+
             result.details?.let { details ->
                 Spacer(modifier = Modifier.height(8.dp))
                 Surface(
@@ -208,3 +208,4 @@ fun TestResultCard(result: TestResult) {
         }
     }
 }
+

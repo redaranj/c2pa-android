@@ -1,6 +1,7 @@
 package org.contentauth.c2pa.signingserver.models
 
 import kotlinx.datetime.Instant
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -20,6 +21,6 @@ data class CSRSigningMetadata(
 data class SignedCertificateSigningResponse(
     val certificateId: String,
     val certificateChain: String,  // PEM-encoded certificate chain
-    val expiresAt: Instant,
+    @Contextual val expiresAt: Instant,
     val serialNumber: String
 )

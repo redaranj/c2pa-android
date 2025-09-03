@@ -1,6 +1,7 @@
 package org.contentauth.c2pa.signingserver.models
 
 import kotlinx.datetime.Instant
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -37,5 +38,5 @@ data class C2PASigningResponse(
 data class SigningSignatureInfo(
     val algorithm: String,
     val certificateChain: String? = null,
-    val timestamp: Instant
+    @Contextual val timestamp: Instant
 )

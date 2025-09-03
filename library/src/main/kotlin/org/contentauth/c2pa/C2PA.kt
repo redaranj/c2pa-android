@@ -1,5 +1,6 @@
 package org.contentauth.c2pa
 
+import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
@@ -878,6 +879,75 @@ class FileStream(
         }
         super.close()
     }
+}
+
+/**
+ * Read-write stream with growable byte array.
+ * Use this for in-memory operations that need to write output.
+ */
+class ByteArrayStream(initialData: ByteArray? = null) : Stream() {
+    private val buffer = ByteArrayOutputStream()
+    private var position = 0
+    private var data: ByteArray = initialData ?: ByteArray(0)
+    
+    init {
+        initialData?.let {
+            buffer.write(it)
+        }
+    }
+    
+    override fun read(buffer: ByteArray, length: Long): Long {
+        if (position >= data.size) return 0
+        val toRead = minOf(length.toInt(), data.size - position)
+        System.arraycopy(data, position, buffer, 0, toRead)
+        position += toRead
+        return toRead.toLong()
+    }
+    
+    override fun seek(offset: Long, mode: Int): Long {
+        position = when (mode) {
+            SeekMode.START.value -> offset.toInt()
+            SeekMode.CURRENT.value -> position + offset.toInt()
+            SeekMode.END.value -> data.size + offset.toInt()
+            else -> return -1L
+        }
+        position = position.coerceIn(0, data.size)
+        return position.toLong()
+    }
+    
+    override fun write(writeData: ByteArray, length: Long): Long {
+        val len = length.toInt()
+        if (position < data.size) {
+            // Writing in the middle - need to handle carefully
+            val newData = data.toMutableList()
+            for (i in 0 until len) {
+                if (position + i < newData.size) {
+                    newData[position + i] = writeData[i]
+                } else {
+                    newData.add(writeData[i])
+                }
+            }
+            data = newData.toByteArray()
+            buffer.reset()
+            buffer.write(data)
+        } else {
+            // Appending
+            buffer.write(writeData, 0, len)
+            data = buffer.toByteArray()
+        }
+        position += len
+        return length
+    }
+    
+    override fun flush(): Long {
+        data = buffer.toByteArray()
+        return 0
+    }
+    
+    /**
+     * Get the current data in the stream
+     */
+    fun getData(): ByteArray = data
 }
 
 /**

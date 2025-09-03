@@ -41,7 +41,6 @@ class C2PASigningController(
     }
 
     private suspend fun handleMultipartSignRequest(call: ApplicationCall) {
-        println("[C2PA Server] Received signing request")
         val multipart = call.receiveMultipart()
         var requestJson: String? = null
         var imageData: ByteArray? = null
@@ -52,12 +51,10 @@ class C2PASigningController(
                     when (part.name) {
                         "request" -> {
                             requestJson = part.streamProvider().readBytes().decodeToString()
-                            println("[C2PA Server] Received request JSON: $requestJson")
                         }
 
                         "image" -> {
                             imageData = part.streamProvider().readBytes()
-                            println("[C2PA Server] Received image: ${imageData?.size} bytes")
                         }
                     }
                 }
