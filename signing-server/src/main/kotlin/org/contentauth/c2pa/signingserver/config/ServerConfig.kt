@@ -1,8 +1,8 @@
 package org.contentauth.c2pa.signingserver.config
 
-import com.typesafe.config.ConfigFactory
-import io.ktor.server.application.*
-import io.ktor.server.config.*
+import io.ktor.server.application.Application
+import io.ktor.server.config.HoconApplicationConfig
+import io.ktor.server.config.tryGetString
 
 data class ServerConfig(
     val port: Int = 8080,
@@ -27,7 +27,7 @@ data class CertificateConfig(
 
 fun Application.loadServerConfig(): ServerConfig {
     val config = environment.config
-    
+
     return ServerConfig(
         port = config.tryGetString("ktor.deployment.port")?.toIntOrNull() ?: 8080,
         host = config.tryGetString("ktor.deployment.host") ?: "0.0.0.0",
@@ -35,15 +35,19 @@ fun Application.loadServerConfig(): ServerConfig {
         maxRequestSize = config.tryGetString("server.maxRequestSize")?.toLongOrNull() ?: 52428800L,
         apiKeyRequired = config.tryGetString("security.apiKeyRequired")?.toBoolean() ?: false,
         apiKey = config.tryGetString("security.apiKey"),
-        corsAllowedHosts = config.tryGetString("cors.allowedHosts")?.split(",")?.map { it.trim() } ?: listOf("*"),
         certificateConfig = CertificateConfig(
-            useExternalCerts = config.tryGetString("certificates.useExternal")?.toBoolean() ?: false,
+            useExternalCerts = config.tryGetString("certificates.useExternal")?.toBoolean()
+                ?: false,
             certsPath = config.tryGetString("certificates.certsPath"),
             privateKeyPath = config.tryGetString("certificates.privateKeyPath"),
-            rootCAValidityDays = config.tryGetString("certificates.rootCAValidityDays")?.toIntOrNull() ?: 3650,
-            intermediateCAValidityDays = config.tryGetString("certificates.intermediateCAValidityDays")?.toIntOrNull() ?: 1825,
-            endEntityValidityDays = config.tryGetString("certificates.endEntityValidityDays")?.toIntOrNull() ?: 365,
-            tempCertValidityDays = config.tryGetString("certificates.tempCertValidityDays")?.toIntOrNull() ?: 1
+            rootCAValidityDays = config.tryGetString("certificates.rootCAValidityDays")
+                ?.toIntOrNull() ?: 3650,
+            intermediateCAValidityDays = config.tryGetString("certificates.intermediateCAValidityDays")
+                ?.toIntOrNull() ?: 1825,
+            endEntityValidityDays = config.tryGetString("certificates.endEntityValidityDays")
+                ?.toIntOrNull() ?: 365,
+            tempCertValidityDays = config.tryGetString("certificates.tempCertValidityDays")
+                ?.toIntOrNull() ?: 1
         )
     )
 }
