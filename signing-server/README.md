@@ -83,10 +83,6 @@ PORT=9090 ../gradlew run
 Configuration can be set via environment variables:
 - `PORT`: Server port (default: 8080)
 - `HOST`: Server host (default: 0.0.0.0)
-- `SERVER_ENV`: Environment (development/production)
-- `CORS_ALLOWED_HOSTS`: Comma-separated list of allowed CORS hosts
-- `API_KEY_REQUIRED`: Whether API key authentication is required
-- `API_KEY`: API key for authentication (when required)
 
 ## Certificate Hierarchy
 

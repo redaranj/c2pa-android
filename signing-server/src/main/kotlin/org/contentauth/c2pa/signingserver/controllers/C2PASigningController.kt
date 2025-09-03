@@ -20,7 +20,6 @@ class C2PASigningController(
 ) {
     suspend fun signManifest(call: ApplicationCall) {
         try {
-            // Check content type for multipart
             val contentType = call.request.contentType()
             if (contentType.match(ContentType.MultiPart.FormData)) {
                 handleMultipartSignRequest(call)
@@ -76,7 +75,7 @@ class C2PASigningController(
             ?: throw IllegalArgumentException("Missing manifestJSON in request")
         val format =
             requestObj["format"] ?: throw IllegalArgumentException("Missing format in request")
-        
+
         val response = c2paService.signManifest(
             manifestJSON = manifestJSON,
             imageData = imageData!!,
