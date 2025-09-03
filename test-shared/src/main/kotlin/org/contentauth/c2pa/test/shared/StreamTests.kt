@@ -19,7 +19,7 @@ import kotlin.random.Random
  * 
  * This file contains extracted test methods that can be run individually.
  */
-abstract class StreamTests : BaseTestSuite() {
+abstract class StreamTests : TestBase() {
 
     // Individual test methods
     

@@ -14,7 +14,7 @@ import java.io.File
  * Provides common functionality for loading resources and running tests.
  * Extracted from TestSuiteCore to enable modular test organization.
  */
-abstract class BaseTestSuite {
+abstract class TestBase {
     
     enum class TestStatus {
         PASSED,
@@ -36,7 +36,7 @@ abstract class BaseTestSuite {
          */
         fun loadSharedResourceAsBytes(resourceName: String): ByteArray? {
             return try {
-                BaseTestSuite::class.java.classLoader?.getResourceAsStream(resourceName)?.use { 
+                TestBase::class.java.classLoader?.getResourceAsStream(resourceName)?.use { 
                     it.readBytes() 
                 }
             } catch (e: Exception) {
@@ -46,7 +46,7 @@ abstract class BaseTestSuite {
         
         fun loadSharedResourceAsString(resourceName: String): String? {
             return try {
-                BaseTestSuite::class.java.classLoader?.getResourceAsStream(resourceName)?.use { 
+                TestBase::class.java.classLoader?.getResourceAsStream(resourceName)?.use { 
                     it.bufferedReader().readText()
                 }
             } catch (e: Exception) {
