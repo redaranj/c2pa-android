@@ -12,8 +12,8 @@ import org.bouncycastle.pkcs.PKCS10CertificationRequest
 import org.bouncycastle.util.io.pem.PemObject
 import org.bouncycastle.util.io.pem.PemReader
 import org.bouncycastle.util.io.pem.PemWriter
-import org.contentauth.c2pa.signingserver.models.CSRMetadata
-import org.contentauth.c2pa.signingserver.models.SignedCertificateResponse
+import org.contentauth.c2pa.signingserver.models.CSRSigningMetadata
+import org.contentauth.c2pa.signingserver.models.SignedCertificateSigningResponse
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import java.io.StringReader
@@ -66,7 +66,7 @@ class CertificateSigningService {
         )
     }
     
-    suspend fun signCSR(csrPEM: String, metadata: CSRMetadata?): SignedCertificateResponse {
+    suspend fun signCSR(csrPEM: String, metadata: CSRSigningMetadata?): SignedCertificateSigningResponse {
         // Parse the CSR
         val csr = parseCertificateSigningRequest(csrPEM)
         
@@ -97,7 +97,7 @@ class CertificateSigningService {
         val certificateId = UUID.randomUUID().toString()
         val expiresAt = Instant.fromEpochMilliseconds(certificate.notAfter.time)
         
-        return SignedCertificateResponse(
+        return SignedCertificateSigningResponse(
             certificateId = certificateId,
             certificateChain = certificateChain,
             expiresAt = expiresAt,

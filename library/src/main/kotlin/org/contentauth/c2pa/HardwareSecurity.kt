@@ -9,13 +9,14 @@ import androidx.annotation.RequiresApi
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import java.security.*
-import java.security.cert.Certificate
+import java.security.KeyFactory
+import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.PrivateKey
+import java.security.Signature
 import java.security.spec.ECGenParameterSpec
-import java.security.spec.RSAKeyGenParameterSpec
 import java.util.Date
 import java.util.concurrent.Executor
-import javax.crypto.Cipher
 import javax.security.auth.x500.X500Principal
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -47,7 +48,7 @@ fun Signer.Companion.withStrongBox(
     }
 
     val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-    
+
     // Get or create StrongBox key
     val privateKey = keyStore.getKey(strongBoxConfig.keyTag, null) as? PrivateKey
         ?: createStrongBoxKey(strongBoxConfig)
@@ -184,7 +185,7 @@ object HardwareSecurity {
             val keyStore = KeyStore.getInstance("AndroidKeyStore")
             keyStore.load(null)
             val privateKey = keyStore.getKey(strongBoxConfig.keyTag, null) as PrivateKey
-            
+
             val signature = Signature.getInstance("SHA256withECDSA")
             signature.initSign(privateKey)
             signature.update(data)
@@ -253,7 +254,8 @@ object HardwareSecurity {
     ): Signer = suspendCoroutine { continuation ->
 
         val executor: Executor = ContextCompat.getMainExecutor(activity)
-        val biometricPrompt = BiometricPrompt(activity, executor,
+        val biometricPrompt = BiometricPrompt(
+            activity, executor,
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     continuation.resumeWithException(

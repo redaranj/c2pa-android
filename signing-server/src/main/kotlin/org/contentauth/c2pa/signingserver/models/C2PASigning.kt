@@ -1,7 +1,7 @@
 package org.contentauth.c2pa.signingserver.models
 
-import kotlinx.serialization.Serializable
 import kotlinx.datetime.Instant
+import kotlinx.serialization.Serializable
 
 @Serializable
 data class C2PASigningRequest(
@@ -12,7 +12,7 @@ data class C2PASigningRequest(
 @Serializable
 data class C2PASigningResponse(
     val manifestStore: ByteArray,  // Binary manifest store data
-    val signatureInfo: SignatureInfo
+    val signatureInfo: SigningSignatureInfo
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -34,7 +34,7 @@ data class C2PASigningResponse(
 }
 
 @Serializable
-data class SignatureInfo(
+data class SigningSignatureInfo(
     val algorithm: String,
     val certificateChain: String? = null,
     val timestamp: Instant
