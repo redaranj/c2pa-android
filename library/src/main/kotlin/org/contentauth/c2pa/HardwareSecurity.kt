@@ -26,7 +26,6 @@ import kotlin.coroutines.suspendCoroutine
  * StrongBox signer configuration
  * StrongBox is Android's hardware security module (equivalent to iOS Secure Enclave)
  */
-@RequiresApi(Build.VERSION_CODES.P)
 data class StrongBoxSignerConfig(
     val keyTag: String,
     val accessControl: Int = KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
@@ -36,7 +35,6 @@ data class StrongBoxSignerConfig(
 /**
  * StrongBox Signing Extension - mirrors iOS Secure Enclave implementation
  */
-@RequiresApi(Build.VERSION_CODES.P)
 fun Signer.Companion.withStrongBox(
     algorithm: SigningAlgorithm,
     certificateChainPEM: String,
@@ -65,7 +63,6 @@ fun Signer.Companion.withStrongBox(
 /**
  * Create a StrongBox key - mirrors iOS createSecureEnclaveKey
  */
-@RequiresApi(Build.VERSION_CODES.P)
 private fun createStrongBoxKey(config: StrongBoxSignerConfig): PrivateKey =
     KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore").run {
         initialize(
@@ -106,7 +103,6 @@ object HardwareSecurity {
      * Creates a CSR for a hardware-backed key and submits it to the signing server
      * Returns a Signer configured with the signed certificate
      */
-    @RequiresApi(Build.VERSION_CODES.M)
     suspend fun createSignerWithCSR(
         keyAlias: String,
         certificateConfig: CertificateManager.CertificateConfig,
@@ -153,7 +149,6 @@ object HardwareSecurity {
     /**
      * Creates a CSR for a StrongBox key and submits it to the signing server
      */
-    @RequiresApi(Build.VERSION_CODES.P)
     suspend fun createStrongBoxSignerWithCSR(
         algorithm: SigningAlgorithm,
         strongBoxConfig: StrongBoxSignerConfig,
@@ -196,7 +191,6 @@ object HardwareSecurity {
     /**
      * Check if StrongBox is available (equivalent to iOS Secure Enclave check)
      */
-    @RequiresApi(Build.VERSION_CODES.P)
     fun isStrongBoxAvailable(context: Context): Boolean =
         context.packageManager.hasSystemFeature("android.hardware.strongbox_keystore")
 
@@ -213,7 +207,6 @@ object HardwareSecurity {
     /**
      * Check if a key is hardware-backed
      */
-    @RequiresApi(Build.VERSION_CODES.M)
     fun isKeyHardwareBacked(keyAlias: String): Boolean = try {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         val privateKey = keyStore.getKey(keyAlias, null) as? PrivateKey ?: return false
@@ -241,7 +234,6 @@ object HardwareSecurity {
     /**
      * Create a signer with biometric authentication
      */
-    @RequiresApi(Build.VERSION_CODES.M)
     suspend fun createBiometricSigner(
         activity: FragmentActivity,
         keyTag: String,

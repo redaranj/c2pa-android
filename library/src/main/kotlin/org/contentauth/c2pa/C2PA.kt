@@ -1,5 +1,6 @@
 package org.contentauth.c2pa
 
+import android.annotation.SuppressLint
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
@@ -21,6 +22,7 @@ import java.util.Base64
  * Load native C2PA libraries.
  * Safe to call multiple times - System.loadLibrary handles duplicates.
  */
+@SuppressLint("UnsafeDynamicallyLoadedCode") // Intentional for server-specific library loading
 internal fun loadC2PALibraries() {
     try {
         // Detect if we're running on Android or JVM

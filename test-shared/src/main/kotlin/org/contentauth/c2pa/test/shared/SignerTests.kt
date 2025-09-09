@@ -117,8 +117,7 @@ abstract class SignerTests : TestBase() {
             val hasStrongBox = getContext().packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_STRONGBOX_KEYSTORE)
 
             var genInHw = false
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                try {
+            try {
                     val keyAlias = "test_hw_key_${System.currentTimeMillis()}"
                     val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore")
                     keyStore.load(null)
@@ -154,9 +153,8 @@ abstract class SignerTests : TestBase() {
                     }
 
                     keyStore.deleteEntry(keyAlias)
-                } catch (_: Exception) {
-                    // Hardware key generation failed
-                }
+            } catch (_: Exception) {
+                // Hardware key generation failed
             }
 
             val success = genInHw || !hasStrongBox
@@ -174,7 +172,7 @@ abstract class SignerTests : TestBase() {
             val hasStrongBox = getContext().packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_STRONGBOX_KEYSTORE)
 
             var strongBoxKeyCreated = false
-            if (hasStrongBox && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            if (hasStrongBox) {
                 try {
                     val keyAlias = "test_strongbox_key_${System.currentTimeMillis()}"
                     val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore")

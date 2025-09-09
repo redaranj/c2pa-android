@@ -56,7 +56,6 @@ object CertificateManager {
      * Android's advantage: We can use standard BouncyCastle APIs since Android
      * allows signing operations with hardware-backed keys through the KeyStore API.
      */
-    @RequiresApi(Build.VERSION_CODES.M)
     @JvmStatic
     fun createCSR(
         keyAlias: String,
@@ -96,7 +95,6 @@ object CertificateManager {
      * Creates a CSR for a StrongBox-backed key (Android P+)
      * StrongBox is Android's hardware security module, similar to iOS's Secure Enclave
      */
-    @RequiresApi(Build.VERSION_CODES.P)
     @JvmStatic
     fun createStrongBoxCSR(
         config: StrongBoxSignerConfig,
@@ -117,7 +115,6 @@ object CertificateManager {
     /**
      * Generate a new hardware-backed key specifically for CSR generation
      */
-    @RequiresApi(Build.VERSION_CODES.M)
     @JvmStatic
     fun generateHardwareKey(
         keyAlias: String,
@@ -140,7 +137,7 @@ object CertificateManager {
             setCertificateNotBefore(java.util.Date(System.currentTimeMillis() - 86400000L))
             setCertificateNotAfter(java.util.Date(System.currentTimeMillis() + 86400000L * 365))
             
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && requireStrongBox) {
+            if (requireStrongBox) {
                 setIsStrongBoxBacked(true)
             }
             
@@ -155,7 +152,6 @@ object CertificateManager {
     /**
      * Check if a key is hardware-backed
      */
-    @RequiresApi(Build.VERSION_CODES.M)
     @JvmStatic
     fun isKeyHardwareBacked(keyAlias: String): Boolean {
         return try {
@@ -229,7 +225,6 @@ object CertificateManager {
         return writer.toString()
     }
     
-    @RequiresApi(Build.VERSION_CODES.P)
     private fun createStrongBoxKey(config: StrongBoxSignerConfig): PrivateKey {
         val keyPairGenerator = KeyPairGenerator.getInstance(
             KeyProperties.KEY_ALGORITHM_EC,

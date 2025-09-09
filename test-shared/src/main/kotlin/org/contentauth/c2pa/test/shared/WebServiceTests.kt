@@ -71,8 +71,8 @@ abstract class WebServiceTests : TestBase() {
                 // Create test image data
                 val testImageData = loadResourceAsBytes("adobe_20220124_ci")
                 
-                // Create a simple manifest
-                val manifest = """
+                // Create a signing request matching what the server expects
+                val manifestJson = """
                     {
                         "claim_generator": "test_app/1.0",
                         "assertions": [
@@ -81,10 +81,17 @@ abstract class WebServiceTests : TestBase() {
                     }
                 """.trimIndent()
                 
+                val signingRequest = """
+                    {
+                        "manifestJSON": ${JSONObject.quote(manifestJson)},
+                        "format": "image/jpeg"
+                    }
+                """.trimIndent()
+                
                 // Sign via web service
                 val requestBody = MultipartBody.Builder()
                     .setType(MultipartBody.FORM)
-                    .addFormDataPart("manifest", manifest)
+                    .addFormDataPart("request", "request.json", signingRequest.toRequestBody("application/json".toMediaType()))
                     .addFormDataPart("image", "test.jpg", testImageData.toRequestBody("image/jpeg".toMediaType()))
                     .build()
                 
@@ -96,12 +103,29 @@ abstract class WebServiceTests : TestBase() {
                 val response = httpClient.newCall(request).execute()
                 val success = response.isSuccessful
                 val responseBody = response.body?.bytes()
+                val responseCode = response.code
+                val responseMessage = response.message
                 response.close()
                 
+                // Debug logging
+                println("Web service response: $responseCode $responseMessage")
+                if (!success) {
+                    println("Response body: ${responseBody?.let { String(it) }}")
+                }
+                
                 if (success && responseBody != null && responseBody.isNotEmpty()) {
-                    // Verify the signed image has a manifest
-                    val manifest = C2PA.readFile("/tmp/signed_test.jpg")
-                    val hasManifest = manifest != null
+                    // Verify the signed image has a manifest by reading from the response data
+                    val manifest = try {
+                        Reader.fromStream(
+                            format = "image/jpeg",
+                            stream = ByteArrayStream(responseBody)
+                        ).use { reader ->
+                            reader.json()
+                        }
+                    } catch (e: Exception) {
+                        null
+                    }
+                    val hasManifest = manifest != null && manifest.isNotEmpty()
                     
                     TestResult(
                         "Web Service Signing & Verification",
@@ -114,7 +138,7 @@ abstract class WebServiceTests : TestBase() {
                         "Web Service Signing & Verification",
                         false,
                         "Web service signing failed",
-                        "HTTP ${response.code}: ${response.message}"
+                        "HTTP ${responseCode}: ${responseMessage}"
                     )
                 }
             } catch (e: Exception) {
