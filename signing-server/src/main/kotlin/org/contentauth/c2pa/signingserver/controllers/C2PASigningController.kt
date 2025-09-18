@@ -1,36 +1,98 @@
 package org.contentauth.c2pa.signingserver.controllers
 
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.content.PartData
-import io.ktor.http.content.forEachPart
-import io.ktor.http.content.streamProvider
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.log
-import io.ktor.server.request.contentType
 import io.ktor.server.request.receive
-import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respond
-import io.ktor.server.response.respondBytes
-import kotlinx.serialization.json.Json
-import org.contentauth.c2pa.signingserver.services.C2PASigningService
+import org.contentauth.c2pa.C2PA
+import org.contentauth.c2pa.SigningAlgorithm
+import org.contentauth.c2pa.signingserver.models.C2PASigningRequest
+import org.contentauth.c2pa.signingserver.models.C2PASigningResponse
+import java.io.File
+import java.util.Base64
 
-class C2PASigningController(
-    private val c2paService: C2PASigningService
-) {
+class C2PASigningController {
     suspend fun signManifest(call: ApplicationCall) {
         try {
-            val contentType = call.request.contentType()
-            if (contentType.match(ContentType.MultiPart.FormData)) {
-                handleMultipartSignRequest(call)
-            } else if (contentType.match(ContentType.Application.Json)) {
-                handleJsonSignRequest(call)
-            } else {
+            val signingRequest = call.receive<C2PASigningRequest>()
+
+            call.application.log.info("[C2PA Controller] Received signing request")
+
+            val certPath = "${System.getProperty("user.dir")}/Resources/es256_certs.pem"
+            val keyPath = "${System.getProperty("user.dir")}/Resources/es256_private.key"
+
+            val certificateChain = File(certPath).readText()
+            val privateKeyPEM = File(keyPath).readText()
+
+            if (!certificateChain.contains("BEGIN CERTIFICATE")) {
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    mapOf("error" to "Invalid certificate format")
+                )
+                return
+            }
+
+            if (!privateKeyPEM.contains("BEGIN PRIVATE KEY") && !privateKeyPEM.contains("BEGIN EC PRIVATE KEY")) {
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    mapOf("error" to "Invalid private key format")
+                )
+                return
+            }
+
+            // Decode the base64-encoded data to sign
+            val dataToSign = try {
+                Base64.getDecoder().decode(signingRequest.dataToSign)
+            } catch (e: Exception) {
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    mapOf("error" to "Content-Type must be multipart/form-data or application/json")
+                    mapOf("error" to "Invalid base64-encoded data")
                 )
+                return
             }
+
+            call.application.log.info("[C2PA] Creating signer for data signing")
+            call.application.log.info("[C2PA] Data to sign size: ${dataToSign.size} bytes")
+            call.application.log.info("[C2PA] Using certificates from: Resources/es256_certs.pem")
+
+            // Use C2PA library's Ed25519 signing if available, otherwise fall back to ES256
+            val signatureBytes = if (privateKeyPEM.contains("ED25519")) {
+                // Use C2PA's Ed25519 signing
+                C2PA.ed25519Sign(dataToSign, privateKeyPEM)
+            } else {
+                // For ES256, we still need to use Java crypto as C2PA expects full manifest signing
+                // Extract the private key from PEM
+                val privateKeyContent = privateKeyPEM
+                    .replace("-----BEGIN PRIVATE KEY-----", "")
+                    .replace("-----BEGIN EC PRIVATE KEY-----", "")
+                    .replace("-----END PRIVATE KEY-----", "")
+                    .replace("-----END EC PRIVATE KEY-----", "")
+                    .replace("\n", "")
+                    .replace("\r", "")
+
+                val keyBytes = Base64.getDecoder().decode(privateKeyContent)
+                val keySpec = java.security.spec.PKCS8EncodedKeySpec(keyBytes)
+                val keyFactory = java.security.KeyFactory.getInstance("EC")
+                val privateKey = keyFactory.generatePrivate(keySpec)
+
+                // Sign the data using ECDSA with SHA-256
+                val signature = java.security.Signature.getInstance("SHA256withECDSA")
+                signature.initSign(privateKey)
+                signature.update(dataToSign)
+                signature.sign()
+            }
+
+            val base64Signature = Base64.getEncoder().encodeToString(signatureBytes)
+
+            call.application.log.info("[C2PA] Signature created, size: ${signatureBytes.size} bytes")
+            call.application.log.info("[C2PA Controller] Signature generated successfully")
+
+            val response = C2PASigningResponse(
+                signature = base64Signature
+            )
+
+            call.respond(HttpStatusCode.OK, response)
         } catch (e: Exception) {
             call.application.log.error("Error signing manifest", e)
             call.respond(
@@ -38,88 +100,5 @@ class C2PASigningController(
                 mapOf("error" to (e.message ?: "Failed to sign manifest"))
             )
         }
-    }
-
-    private suspend fun handleMultipartSignRequest(call: ApplicationCall) {
-        val multipart = call.receiveMultipart()
-        var requestJson: String? = null
-        var imageData: ByteArray? = null
-
-        multipart.forEachPart { part ->
-            when (part) {
-                is PartData.FileItem -> {
-                    when (part.name) {
-                        "request" -> {
-                            requestJson = part.streamProvider().readBytes().decodeToString()
-                        }
-
-                        "image" -> {
-                            imageData = part.streamProvider().readBytes()
-                        }
-                    }
-                }
-
-                else -> {}
-            }
-            part.dispose()
-        }
-
-        requireNotNull(requestJson) { "Missing request JSON" }
-        requireNotNull(imageData) { "Missing image data" }
-
-        val requestObj = Json.decodeFromString<Map<String, String>>(requestJson!!)
-        val manifestJSON = requestObj["manifestJSON"]
-            ?: throw IllegalArgumentException("Missing manifestJSON in request")
-        val format =
-            requestObj["format"] ?: throw IllegalArgumentException("Missing format in request")
-
-        val response = c2paService.signManifest(
-            manifestJSON = manifestJSON,
-            imageData = imageData!!,
-            format = format
-        )
-
-        call.respondBytes(
-            response.manifestStore,
-            ContentType.parse(format),
-            HttpStatusCode.OK
-        )
-    }
-
-    private suspend fun handleJsonSignRequest(call: ApplicationCall) {
-        // For JSON requests, we expect base64-encoded image data
-        val request = call.receive<Map<String, Any>>()
-
-        val manifestJSON = request["manifestJSON"] as? String
-            ?: throw IllegalArgumentException("Missing manifestJSON")
-
-        val format = request["format"] as? String
-            ?: throw IllegalArgumentException("Missing format")
-
-        val imageBase64 = request["imageData"] as? String
-            ?: throw IllegalArgumentException("Missing imageData")
-
-        val imageData = try {
-            java.util.Base64.getDecoder().decode(imageBase64)
-        } catch (e: Exception) {
-            throw IllegalArgumentException("Invalid base64 image data")
-        }
-
-        // Sign the manifest
-        val response = c2paService.signManifest(
-            manifestJSON = manifestJSON,
-            imageData = imageData,
-            format = format
-        )
-
-        // Return the response as JSON with base64-encoded manifest store
-        call.respond(
-            HttpStatusCode.OK,
-            mapOf(
-                "manifestStore" to java.util.Base64.getEncoder()
-                    .encodeToString(response.manifestStore),
-                "signatureInfo" to response.signatureInfo
-            )
-        )
     }
 }

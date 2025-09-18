@@ -23,8 +23,19 @@ sourceSets {
 tasks.register<Copy>("copyLibrarySources") {
     from("../library/src/main/kotlin/org/contentauth/c2pa") {
         include("C2PA.kt")
+        include("C2PAError.kt")
+        include("SigningAlgorithm.kt")
+        include("SignerInfo.kt")
     }
     into("src/main/kotlin/org/contentauth/c2pa")
+    
+    doFirst {
+        // Clean up old C2PA.kt if it exists
+        val oldFile = file("src/main/kotlin/org/contentauth/c2pa/C2PA.kt")
+        if (oldFile.exists() && oldFile.length() < 500) { // If it's the minimal version
+            oldFile.delete()
+        }
+    }
 }
 
 tasks.compileKotlin {

@@ -1,6 +1,6 @@
 .PHONY: all clean setup library publish download-binaries tests coverage help test-app example-app \
         run-test-app run-example-app signing-server-start signing-server-stop signing-server-status \
-        signing-server-build tests-with-server
+        signing-server-build tests-with-server lint lint-check
 
 # Default target
 all: library
@@ -66,6 +66,17 @@ publish:
 clean:
 	@echo "Cleaning build artifacts..."
 	@./gradlew clean
+
+# Linting
+# ==========================
+
+# Run Android lint to check for code issues
+lint-check:
+	@echo "Running Android lint check..."
+	@./gradlew :library:lint :example-app:app:lint
+
+# Alias for lint-check (for CI)
+lint: lint-check
 
 # Signing Server Management
 # ==========================
@@ -176,6 +187,10 @@ help:
 	@echo "  tests                 - Run all tests including hardware signing tests"
 	@echo "  tests-with-server     - Run all tests with automatic signing server management"
 	@echo "  coverage              - Generate test coverage report (requires device)"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  lint                  - Run Android lint checks"
+	@echo "  lint-check            - Run Android lint checks (same as lint)"
 	@echo ""
 	@echo "Signing Server (for hardware signing tests):"
 	@echo "  signing-server-build  - Build the signing server"

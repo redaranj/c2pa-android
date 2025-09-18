@@ -1,93 +1,26 @@
-# Top-level EditorConfig for Android/Kotlin
-# Place this at the repo root.
+# EditorConfig is awesome: https://EditorConfig.org
+
 root = true
 
-############################
-# Defaults
-############################
 [*]
 charset = utf-8
 end_of_line = lf
-insert_final_newline = true
+indent_size = 4
 indent_style = space
-indent_size = 4
-tab_width = 4
-trim_trailing_whitespace = true
-max_line_length = 100
-
-############################
-# Kotlin source & scripts
-############################
-[*.{kt,kts}]
-# JetBrains / Kotlin official code style
-ij_kotlin_code_style_defaults = KOTLIN_OFFICIAL
-ij_kotlin_continuation_indent_size = 4
-
-# Avoid star imports
-ij_kotlin_name_count_to_use_star_import = 2147483647
-ij_kotlin_name_count_to_use_star_import_for_members = 2147483647
-ij_kotlin_packages_to_use_import_on_demand =
-
-# Import layout (keep Kotlin & stdlib near top, then project)
-ij_kotlin_imports_layout = *,java.**,javax.**,kotlin.**,^
-
-# Keep code compact but readable
-ij_kotlin_keep_blank_lines_in_declarations = 1
-ij_kotlin_keep_blank_lines_in_code = 1
-ij_kotlin_keep_blank_lines_before_right_brace = 0
-
-# Ktlint integration. Spotless will pick this up, too.
-ktlint_code_style = ktlint_official
-ktlint_function_naming_ignore_when_annotated_with = Composable
-
-############################
-# Gradle Kotlin DSL files
-############################
-[*.gradle.kts]
-# Build scripts are usually 2-space
-indent_size = 2
-tab_width = 2
+insert_final_newline = true
 max_line_length = 120
+trim_trailing_whitespace = true
 
-############################
-# Android/XML resources
-############################
-[*.xml]
-indent_size = 4
-tab_width = 4
-ij_xml_keep_line_breaks = true
-ij_xml_align_attributes = false
-ij_xml_space_around_equals_in_attribute = false
-ij_xml_keep_blank_lines = 1
+[*.{kt,kts}]
+# Kotlin specific settings
+ktlint_code_style = android_studio
+ktlint_function_naming_ignore_when_annotated_with = Composable
+ij_kotlin_allow_trailing_comma = true
+ij_kotlin_allow_trailing_comma_on_call_site = true
 
-############################
-# Java (if present)
-############################
-[*.java]
-indent_size = 4
-tab_width = 4
-max_line_length = 100
-
-############################
-# JSON / YAML
-############################
-[*.{json,yml,yaml}]
-indent_size = 2
-tab_width = 2
-max_line_length = off
-
-############################
-# Markdown
-############################
 [*.md]
 trim_trailing_whitespace = false
 max_line_length = off
 
-############################
-# Properties & misc
-############################
-[*.properties]
-indent_size = 2
-
-[*.editorconfig]
-indent_size = 2
+[Makefile]
+indent_style = tab

@@ -1,5 +1,5 @@
-import org.gradle.api.publish.maven.MavenPublication
 import java.util.Properties
+import org.gradle.api.publish.maven.MavenPublication
 
 plugins {
     id("com.android.library")
@@ -20,11 +20,7 @@ android {
         consumerProguardFiles("consumer-rules.pro")
 
         // CMake configuration
-        externalNativeBuild {
-            cmake {
-                arguments("-DANDROID_STL=c++_shared")
-            }
-        }
+        externalNativeBuild { cmake { arguments("-DANDROID_STL=c++_shared") } }
 
         // Specify ABIs to use prebuilt .so files
         ndk {
@@ -55,8 +51,8 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                    getDefaultProguardFile("proguard-android-optimize.txt"),
+                    "proguard-rules.pro"
             )
         }
         debug {
@@ -66,38 +62,22 @@ android {
     }
 
     // CMake configuration for JNI code
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-        }
-    }
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
 
     // Make sure to include JNI libs
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("src/main/jniLibs")
-        }
-    }
+    sourceSets { getByName("main") { jniLibs.srcDirs("src/main/jniLibs") } }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    kotlinOptions { jvmTarget = "17" }
 
-    testOptions {
-        unitTests {
-            isIncludeAndroidResources = true
-        }
-    }
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 // Set the base name for the AAR file
-base {
-    archivesName.set("c2pa")
-}
+base { archivesName.set("c2pa") }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
@@ -125,9 +105,7 @@ dependencies {
 }
 
 // JaCoCo configuration
-jacoco {
-    toolVersion = "0.8.10"
-}
+jacoco { toolVersion = "0.8.10" }
 
 // Coverage report for instrumented tests only
 tasks.register<JacocoReport>("jacocoInstrumentedTestReport") {
@@ -138,45 +116,38 @@ tasks.register<JacocoReport>("jacocoInstrumentedTestReport") {
         html.required.set(true)
     }
 
-    val fileFilter = listOf(
-        "**/R.class",
-        "**/R$*.class",
-        "**/BuildConfig.*",
-        "**/Manifest*.*",
-        "**/*Test*.*",
-        "android/**/*.*",
-        "**/*\$Lambda$*.*",
-        "**/*\$inlined$*.*",
-        "**/c2pa_jni.*"  // Exclude JNI native code
-    )
+    val fileFilter =
+            listOf(
+                    "**/R.class",
+                    "**/R$*.class",
+                    "**/BuildConfig.*",
+                    "**/Manifest*.*",
+                    "**/*Test*.*",
+                    "android/**/*.*",
+                    "**/*\$Lambda$*.*",
+                    "**/*\$inlined$*.*",
+                    "**/c2pa_jni.*" // Exclude JNI native code
+            )
 
-    val debugTree = fileTree(layout.buildDirectory.dir("intermediates/javac/debug")) {
-        exclude(fileFilter)
-    }
-    val kotlinDebugTree = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
-        exclude(fileFilter)
-    }
+    val debugTree =
+            fileTree(layout.buildDirectory.dir("intermediates/javac/debug")) { exclude(fileFilter) }
+    val kotlinDebugTree =
+            fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) { exclude(fileFilter) }
 
-    sourceDirectories.setFrom(
-        files("src/main/kotlin", "src/main/java")
-    )
+    sourceDirectories.setFrom(files("src/main/kotlin", "src/main/java"))
     classDirectories.setFrom(files(debugTree, kotlinDebugTree))
 
     executionData.setFrom(
-        fileTree(layout.buildDirectory) {
-            include(
-                "outputs/code_coverage/debugAndroidTest/connected/**/coverage.ec"
-            )
-        }
+            fileTree(layout.buildDirectory) {
+                include("outputs/code_coverage/debugAndroidTest/connected/**/coverage.ec")
+            }
     )
 }
 
 publishing {
     publications {
         create<MavenPublication>("release") {
-            afterEvaluate {
-                from(components["release"])
-            }
+            afterEvaluate { from(components["release"]) }
             groupId = "org.contentauth"
             artifactId = "c2pa"
             version = System.getenv("CI_COMMIT_TAG") ?: "1.0.0-SNAPSHOT"
@@ -196,19 +167,18 @@ publishing {
 
 // Native library download configuration
 val c2paVersion = project.properties["c2paVersion"] as String
-val architectures = mapOf(
-    "arm64-v8a" to "aarch64-linux-android",
-    "armeabi-v7a" to "armv7-linux-androideabi",
-    "x86" to "i686-linux-android",
-    "x86_64" to "x86_64-linux-android"
-)
+val architectures =
+        mapOf(
+                "arm64-v8a" to "aarch64-linux-android",
+                "armeabi-v7a" to "armv7-linux-androideabi",
+                "x86" to "i686-linux-android",
+                "x86_64" to "x86_64-linux-android"
+        )
 
 tasks.register("setupDirectories") {
     doLast {
         val jniLibsDir = file("src/main/jniLibs")
-        architectures.keys.forEach { arch ->
-            file("$jniLibsDir/$arch").mkdirs()
-        }
+        architectures.keys.forEach { arch -> file("$jniLibsDir/$arch").mkdirs() }
         file("src/main/jni").mkdirs()
     }
 }
@@ -234,12 +204,19 @@ tasks.register("downloadNativeLibraries") {
                 val extractDir = file("$downloadDir/$arch")
 
                 // Download the zip file
-                val url = "https://github.com/contentauth/c2pa-rs/releases/download/c2pa-$c2paVersion/c2pa-$c2paVersion-$target.zip"
+                val url =
+                        "https://github.com/contentauth/c2pa-rs/releases/download/c2pa-$c2paVersion/c2pa-$c2paVersion-$target.zip"
                 println("Downloading from: $url")
-                ant.invokeMethod("get", mapOf("src" to url, "dest" to zipFile, "skipexisting" to "true"))
+                ant.invokeMethod(
+                        "get",
+                        mapOf("src" to url, "dest" to zipFile, "skipexisting" to "true")
+                )
 
                 // Extract the zip file
-                ant.invokeMethod("unzip", mapOf("src" to zipFile, "dest" to extractDir, "overwrite" to "true"))
+                ant.invokeMethod(
+                        "unzip",
+                        mapOf("src" to zipFile, "dest" to extractDir, "overwrite" to "true")
+                )
 
                 // Copy the .so file
                 file("$extractDir/lib/libc2pa_c.so").copyTo(soFile, overwrite = true)
@@ -253,10 +230,11 @@ tasks.register("downloadNativeLibraries") {
 
                         // Patch the header file
                         val content = destHeader.readText()
-                        val patchedContent = content.replace(
-                            "typedef struct C2paSigner C2paSigner;",
-                            "typedef struct C2paSigner { } C2paSigner;"
-                        )
+                        val patchedContent =
+                                content.replace(
+                                        "typedef struct C2paSigner C2paSigner;",
+                                        "typedef struct C2paSigner { } C2paSigner;"
+                                )
                         destHeader.writeText(patchedContent)
 
                         headerDownloaded = true
@@ -271,17 +249,13 @@ tasks.register("downloadNativeLibraries") {
 }
 
 // Hook into the build process - download libraries before compilation if they don't exist
-tasks.named("preBuild") {
-    dependsOn("downloadNativeLibraries")
-}
+tasks.named("preBuild") { dependsOn("downloadNativeLibraries") }
 
 // Clean downloaded native libraries
 tasks.register("cleanDownloadedLibraries") {
     doLast {
         // Remove downloaded libraries
-        architectures.keys.forEach { arch ->
-            file("src/main/jniLibs/$arch/libc2pa_c.so").delete()
-        }
+        architectures.keys.forEach { arch -> file("src/main/jniLibs/$arch/libc2pa_c.so").delete() }
 
         // Remove header file
         file("src/main/jni/c2pa.h").delete()
@@ -294,6 +268,4 @@ tasks.register("cleanDownloadedLibraries") {
 }
 
 // Hook into clean task
-tasks.named("clean") {
-    dependsOn("cleanDownloadedLibraries")
-}
+tasks.named("clean") { dependsOn("cleanDownloadedLibraries") }
