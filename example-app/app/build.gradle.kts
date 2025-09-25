@@ -23,8 +23,8 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                    getDefaultProguardFile("proguard-android-optimize.txt"),
+                    "proguard-rules.pro"
             )
         }
     }
@@ -32,12 +32,8 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-    buildFeatures {
-        compose = true
-    }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { compose = true }
     lint {
         // Suppress PackagedPrivateKey error for test private key
         disable += "PackagedPrivateKey"
@@ -55,40 +51,40 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    
+
     // Extended Material Icons
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
-    
+
     // Camera and permissions
     implementation("androidx.camera:camera-camera2:1.4.0")
     implementation("androidx.camera:camera-lifecycle:1.4.0")
     implementation("androidx.camera:camera-view:1.4.0")
     implementation("com.google.accompanist:accompanist-permissions:0.35.0-alpha")
-    
+
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.8.5")
-    
+
     // ViewModel and state management
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.8")
-    
+
     // DataStore for preferences
     implementation("androidx.datastore:datastore-preferences:1.1.1")
-    
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-    
+
     // Image loading
     implementation("io.coil-kt:coil-compose:2.7.0")
-    
+
     // JSON serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    
+
     // OkHttp for network requests
     implementation("com.squareup.okhttp3:okhttp:5.1.0")
-    
+
     // Location services
     implementation("com.google.android.gms:play-services-location:21.3.0")
-    
+
     // Biometric authentication
     implementation("androidx.biometric:biometric:1.1.0")
 

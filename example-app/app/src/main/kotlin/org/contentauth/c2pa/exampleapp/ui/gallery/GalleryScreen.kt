@@ -39,26 +39,60 @@ fun GalleryScreen(
                             context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES),
                             "C2PA"
                     )
+            android.util.Log.d("GalleryScreen", "Looking for images in: ${photosDir.absolutePath}")
+            android.util.Log.d("GalleryScreen", "Directory exists: ${photosDir.exists()}")
+
             if (photosDir.exists()) {
+                val allFiles = photosDir.listFiles()
+                android.util.Log.d(
+                        "GalleryScreen",
+                        "Total files in directory: ${allFiles?.size ?: 0}"
+                )
+                allFiles?.forEach { file ->
+                    android.util.Log.d(
+                            "GalleryScreen",
+                            "Found file: ${file.name} (${file.length()} bytes)"
+                    )
+                }
+
                 val imageFiles =
                         photosDir
                                 .listFiles { file ->
-                                    file.extension.lowercase() in listOf("jpg", "jpeg", "png")
+                                    val isImage =
+                                            file.extension.lowercase() in
+                                                    listOf("jpg", "jpeg", "png")
+                                    android.util.Log.d(
+                                            "GalleryScreen",
+                                            "File ${file.name} is image: $isImage"
+                                    )
+                                    isImage
                                 }
                                 ?.sortedByDescending { it.lastModified() }
                                 ?: emptyList()
+
+                android.util.Log.d("GalleryScreen", "Found ${imageFiles.size} image files")
 
                 images =
                         imageFiles.map { file ->
                             val hasC2PA =
                                     try {
                                         C2PA.readFile(file.absolutePath, null)
+                                        android.util.Log.d(
+                                                "GalleryScreen",
+                                                "File ${file.name} has C2PA: true"
+                                        )
                                         true
                                     } catch (e: Exception) {
+                                        android.util.Log.d(
+                                                "GalleryScreen",
+                                                "File ${file.name} has C2PA: false - ${e.message}"
+                                        )
                                         false
                                     }
                             GalleryImage(file, hasC2PA)
                         }
+            } else {
+                android.util.Log.d("GalleryScreen", "Gallery directory does not exist")
             }
         }
     }

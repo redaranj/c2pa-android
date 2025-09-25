@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -31,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -57,6 +59,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 fun CameraScreen(
         onNavigateToSettings: () -> Unit,
         onNavigateToGallery: () -> Unit,
+        onOpenWebCheck: () -> Unit,
         onImageCaptured: (Bitmap, Location?) -> Unit,
         modifier: Modifier = Modifier
 ) {
@@ -72,6 +75,13 @@ fun CameraScreen(
     val locationPermissionState = rememberPermissionState(Manifest.permission.ACCESS_FINE_LOCATION)
 
     val locationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+
+    // Request location permission when camera permission is granted
+    LaunchedEffect(cameraPermissionState.status.isGranted) {
+        if (cameraPermissionState.status.isGranted && !locationPermissionState.status.isGranted) {
+            locationPermissionState.launchPermissionRequest()
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -130,13 +140,8 @@ fun CameraScreen(
                         onCapture = { /* Handled by CameraPreview */},
                         onNavigateToSettings = onNavigateToSettings,
                         onNavigateToGallery = onNavigateToGallery,
+                        onOpenWebCheck = onOpenWebCheck,
                         isCapturing = isCapturing,
-                        hasLocationPermission = locationPermissionState.status.isGranted,
-                        onRequestLocation = {
-                            if (!locationPermissionState.status.isGranted) {
-                                locationPermissionState.launchPermissionRequest()
-                            }
-                        },
                         modifier = Modifier.align(Alignment.BottomCenter)
                 )
             }
@@ -196,7 +201,7 @@ private fun CameraPreview(
     Box(modifier = modifier) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
 
-        // Capture button
+        // Capture button - positioned above the bottom controls bar
         IconButton(
                 onClick = {
                     imageCapture?.let { capture ->
@@ -204,7 +209,7 @@ private fun CameraPreview(
                     }
                 },
                 modifier =
-                        Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp).size(72.dp)
+                        Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp).size(72.dp)
         ) {
             Icon(
                     imageVector = Icons.Filled.PhotoCamera,
@@ -231,8 +236,10 @@ private fun captureImage(
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     val bitmap = imageProxyToBitmap(image)
+                    // Apply rotation if needed
+                    val rotatedBitmap = rotateBitmap(bitmap, image.imageInfo.rotationDegrees)
                     image.close()
-                    onCapture(bitmap)
+                    onCapture(rotatedBitmap)
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -270,14 +277,22 @@ private fun imageProxyToBitmap(image: ImageProxy): Bitmap {
             }
 }
 
+private fun rotateBitmap(source: Bitmap, angle: Int): Bitmap {
+    if (angle == 0) return source
+
+    val matrix = android.graphics.Matrix()
+    matrix.postRotate(angle.toFloat())
+
+    return Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+}
+
 @Composable
 private fun CameraControls(
         onCapture: () -> Unit,
         onNavigateToSettings: () -> Unit,
         onNavigateToGallery: () -> Unit,
+        onOpenWebCheck: () -> Unit,
         isCapturing: Boolean,
-        hasLocationPermission: Boolean,
-        onRequestLocation: () -> Unit,
         modifier: Modifier = Modifier
 ) {
     Row(
@@ -297,17 +312,17 @@ private fun CameraControls(
             )
         }
 
-        // Spacer
-        Spacer(modifier = Modifier.weight(1f))
-
-        // Location toggle
-        IconButton(onClick = onRequestLocation) {
+        // Web Check button
+        IconButton(onClick = onOpenWebCheck) {
             Icon(
-                    imageVector = Icons.Filled.LocationOn,
-                    contentDescription = "Location",
-                    tint = if (hasLocationPermission) Color.Green else Color.White
+                    imageVector = Icons.Filled.CloudUpload,
+                    contentDescription = "Check C2PA",
+                    tint = Color.White
             )
         }
+
+        // Spacer
+        Spacer(modifier = Modifier.weight(1f))
 
         // Settings button
         IconButton(onClick = onNavigateToSettings) {
@@ -327,11 +342,12 @@ private fun ImagePreview(
         onConfirm: () -> Unit,
         onRetake: () -> Unit
 ) {
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         Image(
                 bitmap = bitmap.asImageBitmap(),
                 contentDescription = "Preview",
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit
         )
 
         // Location indicator
