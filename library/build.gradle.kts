@@ -156,7 +156,8 @@ publishing {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/contentauth/c2pa-android")
+            val githubRepo = System.getenv("GITHUB_REPOSITORY") ?: "contentauth/c2pa-android"
+            url = uri("https://maven.pkg.github.com/$githubRepo")
             credentials {
                 username = System.getenv("GITHUB_ACTOR")
                 password = System.getenv("GITHUB_TOKEN")
@@ -267,5 +268,11 @@ tasks.register("cleanDownloadedLibraries") {
     }
 }
 
+// Hook into clean task
+tasks.named("clean") { dependsOn("cleanDownloadedLibraries") }
+// Hook into clean task
+tasks.named("clean") { dependsOn("cleanDownloadedLibraries") }
+// Hook into clean task
+tasks.named("clean") { dependsOn("cleanDownloadedLibraries") }
 // Hook into clean task
 tasks.named("clean") { dependsOn("cleanDownloadedLibraries") }
