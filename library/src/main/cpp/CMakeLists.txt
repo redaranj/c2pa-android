@@ -15,3 +15,8 @@ target_link_libraries(c2pa_jni
 # Include directories
 target_include_directories(c2pa_jni PRIVATE
     ${CMAKE_SOURCE_DIR}/../jni)
+
+# Enable 16 KB page size support (required for Android 15+ devices)
+# NDK r27+ supports this by default, but we set it explicitly for clarity
+target_link_options(c2pa_jni PRIVATE
+    "-Wl,-z,max-page-size=16384")
