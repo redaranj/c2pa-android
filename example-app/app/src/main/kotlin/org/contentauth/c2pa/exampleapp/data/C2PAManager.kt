@@ -608,16 +608,20 @@ class C2PAManager(private val context: Context, private val preferencesManager: 
 
     private fun createLocationAssertion(location: Location): JSONObject {
         val timestamp = formatIsoTimestamp(Date(location.time))
-        val exifData =
+        val metadata =
             JSONObject().apply {
-                put("exif:GPSLatitude", location.latitude)
-                put("exif:GPSLongitude", location.longitude)
-                put("exif:GPSAltitude", location.altitude)
+                put("exif:GPSLatitude", location.latitude.toString())
+                put("exif:GPSLongitude", location.longitude.toString())
+                put("exif:GPSAltitude", location.altitude.toString())
                 put("exif:GPSTimeStamp", timestamp)
+                put(
+                    "@context",
+                    JSONObject().apply { put("exif", "http://ns.adobe.com/exif/1.0/") },
+                )
             }
         return JSONObject().apply {
-            put("label", "stds.exif")
-            put("data", exifData)
+            put("label", "c2pa.metadata")
+            put("data", metadata)
         }
     }
 
@@ -647,7 +651,9 @@ class C2PAManager(private val context: Context, private val preferencesManager: 
         // For simplicity, saving to app's external files directory
         val photosDir =
             File(
-                context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES),
+                context.getExternalFilesDir(
+                    android.os.Environment.DIRECTORY_PICTURES,
+                ),
                 "C2PA",
             )
         Log.d(TAG, "Gallery directory: ${photosDir.absolutePath}")
