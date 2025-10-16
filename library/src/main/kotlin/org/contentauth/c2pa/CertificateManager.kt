@@ -45,11 +45,11 @@ object CertificateManager {
 
     data class CertificateConfig(
         val commonName: String,
-        val organization: String,
-        val organizationalUnit: String,
-        val country: String,
-        val state: String,
-        val locality: String,
+        val organization: String? = null,
+        val organizationalUnit: String? = null,
+        val country: String? = null,
+        val state: String? = null,
+        val locality: String? = null,
         val emailAddress: String? = null,
     )
 
@@ -202,15 +202,15 @@ object CertificateManager {
     // Private helper methods
 
     private fun buildX500Name(config: CertificateConfig): X500Name {
-        val builder = StringBuilder()
-        builder.append("CN=").append(config.commonName)
-        builder.append(", O=").append(config.organization)
-        builder.append(", OU=").append(config.organizationalUnit)
-        builder.append(", L=").append(config.locality)
-        builder.append(", ST=").append(config.state)
-        builder.append(", C=").append(config.country)
-        config.emailAddress?.let { builder.append(", EMAILADDRESS=").append(it) }
-        return X500Name(builder.toString())
+        val parts = mutableListOf<String>()
+        parts.add("CN=${config.commonName}")
+        config.organization?.let { parts.add("O=$it") }
+        config.organizationalUnit?.let { parts.add("OU=$it") }
+        config.locality?.let { parts.add("L=$it") }
+        config.state?.let { parts.add("ST=$it") }
+        config.country?.let { parts.add("C=$it") }
+        config.emailAddress?.let { parts.add("EMAILADDRESS=$it") }
+        return X500Name(parts.joinToString(", "))
     }
 
     private fun createContentSigner(privateKey: PrivateKey): ContentSigner {
