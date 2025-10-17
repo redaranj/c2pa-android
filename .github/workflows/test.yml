@@ -60,6 +60,9 @@ jobs:
       - name: Run instrumented tests with coverage
         uses: reactivecircus/android-emulator-runner@v2
         timeout-minutes: 20
+        env:
+          BEARER_TOKEN: test-12345
+          SIGNING_SERVER_URL: http://10.0.2.2:8080
         with:
           api-level: ${{ matrix.api-level }}
           target: ${{ matrix.target }}
@@ -67,9 +70,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: |
-            ./gradlew :library:createDebugCoverageReport
-            ./gradlew :library:jacocoInstrumentedTestReport
+          script: make tests-with-server
 
       - name: Upload test results
         if: always()
@@ -85,7 +86,7 @@ jobs:
           name: coverage-reports-${{ matrix.api-level }}
           path: |
             library/build/reports/jacoco/jacocoInstrumentedTestReport/
-            library/build/reports/coverage/androidTest/debug/
+            library/build/reports/coverage/androidTest/debug/connected/
 
       - name: Upload coverage reports to Codecov
         if: always()
@@ -114,11 +115,13 @@ jobs:
         run: make library
 
       - name: Run lint
-        run: ./gradlew :library:lint
+        run: make lint
 
       - name: Upload lint results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lint-results
-          path: library/build/reports/lint-results-*.html
+          path: |
+            library/build/reports/lint-results-*.html
+            example-app/app/build/reports/lint-results-*.html

@@ -1,0 +1,44 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_size = 4
+indent_style = space
+insert_final_newline = true
+max_line_length = 120
+trim_trailing_whitespace = true
+
+[*.{kt,kts}]
+# Kotlin specific settings - Match Android Studio formatting
+ktlint_code_style = android_studio
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+# Enable Android Studio style formatting
+ij_kotlin_allow_trailing_comma = true
+ij_kotlin_allow_trailing_comma_on_call_site = true
+
+# Continuation indentation (4 spaces, matching Android Studio)
+ij_kotlin_continuation_indent_size = 4
+
+# Import ordering (standard library first, then third party)
+ij_kotlin_imports_layout = *,java.**,javax.**,kotlin.**,^
+
+# Wrapping and braces
+ij_kotlin_method_call_chain_wrap = normal
+ij_kotlin_wrap_first_method_in_call_chain = false
+
+# Line breaks
+ktlint_standard_chain-wrapping = disabled
+ktlint_standard_multiline-expression-wrapping = disabled
+
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+[Makefile]
+indent_style = tab
+
+[*.{yml,yaml}]
+indent_size = 2
+indent_style = space

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Only expose the C2PA directory -->
+    <external-files-path
+        name="c2pa_images"
+        path="Pictures/C2PA/" />
+</paths>
