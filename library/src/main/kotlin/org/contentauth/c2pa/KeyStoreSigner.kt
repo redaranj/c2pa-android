@@ -26,11 +26,13 @@ import kotlin.coroutines.suspendCoroutine
  *     certificateChainPEM = certificateChain,
  *     keyAlias = "my-signing-key"
  * )
+ * ```
  *
- * // With biometric authentication:
+ * With biometric authentication:
+ * ```kotlin
  * val signer = KeyStoreSigner.createBiometricSigner(
  *     activity = activity,
- *     keyAlias = "my-key",
+ *     keyAlias = "my-biometric-key",
  *     algorithm = SigningAlgorithm.ES256,
  *     certificateChainPEM = certificateChain
  * )

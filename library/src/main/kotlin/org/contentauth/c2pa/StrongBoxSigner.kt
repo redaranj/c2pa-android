@@ -26,9 +26,14 @@ import javax.security.auth.x500.X500Principal
  * Example usage:
  * ```kotlin
  * val config = StrongBoxSigner.Config(
- *     keyTag = "strongbox-key",
- *     requireUserAuthentication = true
+ *     keyTag = "my-strongbox-key",
+ *     requireUserAuthentication = false
  * )
+ *
+ * if (!StrongBoxSigner.keyExists(config.keyTag)) {
+ *     StrongBoxSigner.createKey(config)
+ * }
+ *
  * val signer = StrongBoxSigner.createSigner(
  *     algorithm = SigningAlgorithm.ES256,
  *     certificateChainPEM = certificateChain,
