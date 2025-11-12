@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit
  *     configurationURL = "http://10.0.2.2:8080/api/v1/c2pa/configuration",
  *     bearerToken = "your-token-here"
  * )
+ *
  * val signer = webServiceSigner.createSigner()
  * ```
  */
