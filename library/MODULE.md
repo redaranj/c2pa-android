@@ -1,4 +1,4 @@
-# Module c2pa
+# Module c2pa-android
 
 C2PA Android is a Kotlin wrapper around the C2PA C API, providing content authenticity and provenance functionality for Android applications.
 
