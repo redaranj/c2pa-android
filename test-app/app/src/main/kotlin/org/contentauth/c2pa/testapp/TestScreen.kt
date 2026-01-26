@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.contentauth.c2pa.test.shared.BuilderTests
 import org.contentauth.c2pa.test.shared.CoreTests
+import org.contentauth.c2pa.test.shared.ManifestTests
 import org.contentauth.c2pa.test.shared.SignerTests
 import org.contentauth.c2pa.test.shared.StreamTests
 import org.contentauth.c2pa.test.shared.TestBase
@@ -128,6 +129,16 @@ private class AppWebServiceTests(private val context: Context) : WebServiceTests
         copyResourceToCache(context, resourceName, fileName)
 }
 
+private class AppManifestTests(private val context: Context) : ManifestTests() {
+    override fun getContext(): Context = context
+    override fun loadResourceAsBytes(resourceName: String): ByteArray = loadResourceWithExtensions(resourceName)
+        ?: throw IllegalArgumentException("Resource not found: $resourceName")
+    override fun loadResourceAsString(resourceName: String): String = loadResourceStringWithExtensions(resourceName)
+        ?: throw IllegalArgumentException("Resource not found: $resourceName")
+    override fun copyResourceToFile(resourceName: String, fileName: String): File =
+        copyResourceToCache(context, resourceName, fileName)
+}
+
 /** Run all tests from all test suites */
 private suspend fun runAllTests(context: Context): List<TestResult> = withContext(Dispatchers.IO) {
     val results = mutableListOf<TestResult>()
@@ -185,6 +196,19 @@ private suspend fun runAllTests(context: Context): List<TestResult> = withContex
 
     // Additional Stream Tests (large buffer handling)
     results.add(streamTests.testLargeBufferHandling())
+
+    // Manifest Tests
+    val manifestTests = AppManifestTests(context)
+    results.add(manifestTests.testMinimal())
+    results.add(manifestTests.testCreated())
+    results.add(manifestTests.testEnumRendering())
+    results.add(manifestTests.testRegionOfInterest())
+    results.add(manifestTests.testResourceRef())
+    results.add(manifestTests.testHashedUri())
+    results.add(manifestTests.testUriOrResource())
+    results.add(manifestTests.testMassInit())
+    results.add(manifestTests.testManifestToJson())
+    results.add(manifestTests.testShapeFactoryMethods())
 
     results
 }
