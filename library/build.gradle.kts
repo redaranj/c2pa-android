@@ -97,13 +97,13 @@ dependencies {
     implementation("com.google.android.material:material:1.13.0")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("com.squareup.okhttp3:okhttp:5.1.0")
+    api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    api("com.squareup.okhttp3:okhttp:5.1.0")
     implementation("net.java.dev.jna:jna:5.17.0@aar")
 
     // BouncyCastle for CSR generation
-    implementation("org.bouncycastle:bcprov-jdk18on:1.81")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.81")
+    api("org.bouncycastle:bcprov-jdk18on:1.81")
+    api("org.bouncycastle:bcpkix-jdk18on:1.81")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.2.10")
