@@ -18,6 +18,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("jacoco")
+    id("org.cyclonedx.bom") version "3.1.0"
     `maven-publish`
 }
 
@@ -118,6 +119,13 @@ dependencies {
 
 // JaCoCo configuration
 jacoco { toolVersion = "0.8.10" }
+
+// CycloneDX SBOM configuration
+tasks.cyclonedxDirectBom {
+    includeConfigs = listOf("releaseRuntimeClasspath")
+    jsonOutput.set(file("build/reports/sbom.json"))
+    xmlOutput.unsetConvention()
+}
 
 // Coverage report for instrumented tests only
 tasks.register<JacocoReport>("jacocoInstrumentedTestReport") {
