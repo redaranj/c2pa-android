@@ -90,12 +90,12 @@ jobs:
         ./gradlew :library:cyclonedxDirectBom
 
     - name: Attest build provenance
-      uses: actions/attest-build-provenance@v2
+      uses: actions/attest-build-provenance@v3
       with:
         subject-path: 'library/build/outputs/aar/*.aar'
 
     - name: Attest SBOM
-      uses: actions/attest-sbom@v2
+      uses: actions/attest-sbom@v3
       with:
         subject-path: 'library/build/outputs/aar/*.aar'
         sbom-path: 'library/build/reports/sbom.json'
