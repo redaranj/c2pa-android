@@ -135,31 +135,44 @@ abstract class BuilderTests : TestBase() {
     suspend fun testBuilderRemoteUrl(): TestResult = withContext(Dispatchers.IO) {
         runTest("Builder Remote URL") {
             val manifestJson = TEST_MANIFEST_JSON
+            val remoteUrl = "https://example.com/manifest.c2pa"
 
             try {
                 val builder = Builder.fromJson(manifestJson)
                 try {
-                    builder.setRemoteURL("https://example.com/manifest.c2pa")
-                    builder.setNoEmbed()
-                    val archive = ByteArrayStream()
+                    builder.setRemoteURL(remoteUrl)
+
+                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                    val sourceStream = ByteArrayStream(sourceImageData)
+                    val fileTest = File.createTempFile("c2pa-remote-url-test", ".jpg")
+                    val destStream = FileStream(fileTest)
+
                     try {
-                        builder.toArchive(archive)
-                        val archiveData = archive.getData()
-                        val archiveStr = String(archiveData)
-                        val success =
-                            archiveStr.contains("https://example.com/manifest.c2pa")
-                        TestResult(
-                            "Builder Remote URL",
-                            success,
-                            if (success) {
-                                "Remote URL set successfully"
-                            } else {
-                                "Remote URL not found in archive"
-                            },
-                            "Archive contains URL: $success",
-                        )
+                        val certPem = loadResourceAsString("es256_certs")
+                        val keyPem = loadResourceAsString("es256_private")
+                        val signer = Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem))
+
+                        try {
+                            val signResult = builder.sign("image/jpeg", sourceStream, destStream, signer)
+                            val hasManifestBytes = signResult.manifestBytes != null && signResult.manifestBytes!!.isNotEmpty()
+                            val success = signResult.size > 0 && hasManifestBytes
+                            TestResult(
+                                "Builder Remote URL",
+                                success,
+                                if (success) {
+                                    "Remote URL set successfully"
+                                } else {
+                                    "Remote signing failed"
+                                },
+                                "Sign result size: ${signResult.size}, Has manifest bytes: $hasManifestBytes",
+                            )
+                        } finally {
+                            signer.close()
+                        }
                     } finally {
-                        archive.close()
+                        sourceStream.close()
+                        destStream.close()
+                        fileTest.delete()
                     }
                 } finally {
                     builder.close()
@@ -186,24 +199,38 @@ abstract class BuilderTests : TestBase() {
                     val thumbnailStream = ByteArrayStream(thumbnailData)
                     try {
                         builder.addResource("thumbnail", thumbnailStream)
-                        builder.setNoEmbed()
-                        val archive = ByteArrayStream()
+
+                        val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                        val sourceStream = ByteArrayStream(sourceImageData)
+                        val fileTest = File.createTempFile("c2pa-resource-test", ".jpg")
+                        val destStream = FileStream(fileTest)
+
                         try {
-                            builder.toArchive(archive)
-                            val archiveStr = String(archive.getData())
-                            val success = archiveStr.contains("thumbnail")
-                            TestResult(
-                                "Builder Add Resource",
-                                success,
-                                if (success) {
-                                    "Resource added successfully"
-                                } else {
-                                    "Resource not found in archive"
-                                },
-                                "Thumbnail size: ${thumbnailData.size} bytes, Found in archive: $success",
-                            )
+                            val certPem = loadResourceAsString("es256_certs")
+                            val keyPem = loadResourceAsString("es256_private")
+                            val signer = Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem))
+
+                            try {
+                                builder.sign("image/jpeg", sourceStream, destStream, signer)
+                                val manifest = C2PA.readFile(fileTest.absolutePath)
+                                val success = manifest.contains("thumbnail")
+                                TestResult(
+                                    "Builder Add Resource",
+                                    success,
+                                    if (success) {
+                                        "Resource added successfully"
+                                    } else {
+                                        "Resource not found in signed manifest"
+                                    },
+                                    "Thumbnail size: ${thumbnailData.size} bytes, Found in manifest: $success",
+                                )
+                            } finally {
+                                signer.close()
+                            }
                         } finally {
-                            archive.close()
+                            sourceStream.close()
+                            destStream.close()
+                            fileTest.delete()
                         }
                     } finally {
                         thumbnailStream.close()
@@ -239,25 +266,38 @@ abstract class BuilderTests : TestBase() {
                             "image/jpeg",
                             ingredientStream,
                         )
-                        builder.setNoEmbed()
-                        val archive = ByteArrayStream()
+
+                        val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                        val sourceStream = ByteArrayStream(sourceImageData)
+                        val fileTest = File.createTempFile("c2pa-ingredient-test", ".jpg")
+                        val destStream = FileStream(fileTest)
+
                         try {
-                            builder.toArchive(archive)
-                            val archiveStr = String(archive.getData())
-                            val success =
-                                archiveStr.contains("\"title\":\"Test Ingredient\"")
-                            TestResult(
-                                "Builder Add Ingredient",
-                                success,
-                                if (success) {
-                                    "Ingredient added successfully"
-                                } else {
-                                    "Ingredient not found in archive"
-                                },
-                                "Ingredient found: $success",
-                            )
+                            val certPem = loadResourceAsString("es256_certs")
+                            val keyPem = loadResourceAsString("es256_private")
+                            val signer = Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem))
+
+                            try {
+                                builder.sign("image/jpeg", sourceStream, destStream, signer)
+                                val manifest = C2PA.readFile(fileTest.absolutePath)
+                                val success = manifest.contains("Test Ingredient")
+                                TestResult(
+                                    "Builder Add Ingredient",
+                                    success,
+                                    if (success) {
+                                        "Ingredient added successfully"
+                                    } else {
+                                        "Ingredient not found in signed manifest"
+                                    },
+                                    "Ingredient found: $success",
+                                )
+                            } finally {
+                                signer.close()
+                            }
                         } finally {
-                            archive.close()
+                            sourceStream.close()
+                            destStream.close()
+                            fileTest.delete()
                         }
                     } finally {
                         ingredientStream.close()
