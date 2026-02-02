@@ -15,6 +15,11 @@ package org.contentauth.c2pa.test.shared
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.contentauth.c2pa.DigitalSourceType
+import org.contentauth.c2pa.manifest.ActionAssertion
+import org.contentauth.c2pa.manifest.AssertionDefinition
+import org.contentauth.c2pa.manifest.ClaimGeneratorInfo
+import org.contentauth.c2pa.manifest.ManifestDefinition
 import java.io.File
 
 /**
@@ -38,11 +43,17 @@ abstract class TestBase {
     )
 
     companion object {
-        const val TEST_MANIFEST_JSON =
-            """{
-            "claim_generator": "test_app/1.0",
-            "assertions": [{"label": "c2pa.test", "data": {"test": true}}]
-        }"""
+        val TEST_MANIFEST_JSON: String by lazy {
+            ManifestDefinition(
+                title = "Test Asset",
+                claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test_app", version = "1.0")),
+                assertions = listOf(
+                    AssertionDefinition.action(
+                        ActionAssertion.created(DigitalSourceType.DIGITAL_CAPTURE),
+                    ),
+                ),
+            ).toJson()
+        }
 
         /** Load a test resource from the classpath (test-shared module resources). */
         fun loadSharedResourceAsBytes(resourceName: String): ByteArray? = try {

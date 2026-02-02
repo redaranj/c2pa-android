@@ -418,7 +418,7 @@ abstract class BuilderTests : TestBase() {
                                     )
                                 try {
                                     val json = reader.json()
-                                    json.contains("\"c2pa.test\"")
+                                    json.contains("\"c2pa.actions\"")
                                 } finally {
                                     reader.close()
                                 }
@@ -427,7 +427,7 @@ abstract class BuilderTests : TestBase() {
                             }
                         } else {
                             val manifest = C2PA.readFile(fileTest.absolutePath)
-                            manifest.contains("\"c2pa.test\"")
+                            manifest.contains("\"c2pa.actions\"")
                         }
 
                     freshStream.close()

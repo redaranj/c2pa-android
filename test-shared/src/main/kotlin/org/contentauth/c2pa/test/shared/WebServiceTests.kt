@@ -19,8 +19,13 @@ import okhttp3.Request
 import org.contentauth.c2pa.Builder
 import org.contentauth.c2pa.ByteArrayStream
 import org.contentauth.c2pa.DataStream
+import org.contentauth.c2pa.DigitalSourceType
 import org.contentauth.c2pa.Reader
 import org.contentauth.c2pa.WebServiceSigner
+import org.contentauth.c2pa.manifest.ActionAssertion
+import org.contentauth.c2pa.manifest.AssertionDefinition
+import org.contentauth.c2pa.manifest.ClaimGeneratorInfo
+import org.contentauth.c2pa.manifest.ManifestDefinition
 import java.util.concurrent.TimeUnit
 
 /** WebServiceTests - Web service tests for signing server */
@@ -148,13 +153,11 @@ abstract class WebServiceTests : TestBase() {
 
                 // Simple test: sign a small image
                 val testImageData = loadResourceAsBytes("adobe_20220124_ci")
-                val manifestJson =
-                    """
-                                {
-                                    "claim_generator": "c2pa-android-test/1.0",
-                                    "title": "Web Service Test"
-                                }
-                    """.trimIndent()
+                val manifestJson = ManifestDefinition.created(
+                    title = "Web Service Test",
+                    claimGeneratorInfo = ClaimGeneratorInfo(name = "c2pa-android-test", version = "1.0"),
+                    digitalSourceType = DigitalSourceType.DIGITAL_CAPTURE,
+                ).toJson()
 
                 val builder = Builder.fromJson(manifestJson)
                 val sourceStream = DataStream(testImageData)

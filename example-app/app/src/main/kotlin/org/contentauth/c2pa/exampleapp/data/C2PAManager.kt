@@ -38,6 +38,13 @@ import org.contentauth.c2pa.SigningAlgorithm
 import org.contentauth.c2pa.StrongBoxSigner
 import org.contentauth.c2pa.WebServiceSigner
 import org.contentauth.c2pa.exampleapp.model.SigningMode
+import org.contentauth.c2pa.DigitalSourceType
+import org.contentauth.c2pa.manifest.ActionAssertion
+import org.contentauth.c2pa.manifest.AssertionDefinition
+import org.contentauth.c2pa.manifest.ClaimGeneratorInfo
+import org.contentauth.c2pa.manifest.ManifestDefinition
+import JsonObject
+import JsonPrimitive
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -551,37 +558,51 @@ class C2PAManager(private val context: Context, private val preferencesManager: 
     }
 
     private fun createManifestJSON(location: Location?, signingMode: SigningMode): String {
-        val manifest =
-            JSONObject().apply {
-                put("claim_generator", "C2PA Android Example/1.0.0")
-                put("title", "Image signed on Android")
+        val assertions = mutableListOf<AssertionDefinition>(
+            AssertionDefinition.action(
+                ActionAssertion.created(
+                    digitalSourceType = DigitalSourceType.DIGITAL_CAPTURE,
+                    softwareAgent = "C2PA Android Example/1.0.0",
+                ),
+            ),
+        )
 
-                val assertions = JSONArray()
+        // Add location assertion if available
+        location?.let {
+            val locationTimestamp = formatIsoTimestamp(Date(it.time))
+            assertions.add(
+                AssertionDefinition.exif(
+                    mapOf(
+                        "exif:GPSLatitude" to JsonPrimitive(it.latitude.toString()),
+                        "exif:GPSLongitude" to JsonPrimitive(it.longitude.toString()),
+                        "exif:GPSAltitude" to JsonPrimitive(it.altitude.toString()),
+                        "exif:GPSTimeStamp" to JsonPrimitive(locationTimestamp),
+                        "@context" to JsonObject(
+                            mapOf("exif" to JsonPrimitive("http://ns.adobe.com/exif/1.0/")),
+                        ),
+                    ),
+                ),
+            )
+        }
 
-                // Add location assertion if available
-                location?.let { assertions.put(createLocationAssertion(it)) }
+        // Add signing method assertion
+        assertions.add(
+            AssertionDefinition.custom(
+                label = "c2pa.signing_method",
+                data = JsonObject(
+                    mapOf(
+                        "method" to JsonPrimitive(signingMode.name),
+                        "description" to JsonPrimitive(signingMode.description),
+                    ),
+                ),
+            ),
+        )
 
-                // Add creation time assertion
-                assertions.put(createCreationAssertion())
-
-                // Add signing method assertion
-                val signingMethodAssertion =
-                    JSONObject().apply {
-                        put("label", "c2pa.signing_method")
-                        put(
-                            "data",
-                            JSONObject().apply {
-                                put("method", signingMode.name)
-                                put("description", signingMode.description)
-                            },
-                        )
-                    }
-                assertions.put(signingMethodAssertion)
-
-                put("assertions", assertions)
-            }
-
-        return manifest.toString()
+        return ManifestDefinition(
+            title = "Image signed on Android",
+            claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "C2PA Android Example", version = "1.0.0")),
+            assertions = assertions,
+        ).toJson()
     }
 
     private fun verifySignedImage(imageData: ByteArray) {
@@ -615,40 +636,6 @@ class C2PAManager(private val context: Context, private val preferencesManager: 
             tempFile.delete()
         } catch (e: Exception) {
             Log.e(TAG, "C2PA VERIFICATION FAILED", e)
-        }
-    }
-
-    private fun createLocationAssertion(location: Location): JSONObject {
-        val timestamp = formatIsoTimestamp(Date(location.time))
-        val metadata =
-            JSONObject().apply {
-                put("exif:GPSLatitude", location.latitude.toString())
-                put("exif:GPSLongitude", location.longitude.toString())
-                put("exif:GPSAltitude", location.altitude.toString())
-                put("exif:GPSTimeStamp", timestamp)
-                put(
-                    "@context",
-                    JSONObject().apply { put("exif", "http://ns.adobe.com/exif/1.0/") },
-                )
-            }
-        return JSONObject().apply {
-            put("label", "c2pa.metadata")
-            put("data", metadata)
-        }
-    }
-
-    private fun createCreationAssertion(): JSONObject {
-        val timestamp = formatIsoTimestamp(Date())
-        val action =
-            JSONObject().apply {
-                put("action", "c2pa.created")
-                put("when", timestamp)
-            }
-        val actions = JSONArray().apply { put(action) }
-        val data = JSONObject().apply { put("actions", actions) }
-        return JSONObject().apply {
-            put("label", "c2pa.actions")
-            put("data", data)
         }
     }
 
