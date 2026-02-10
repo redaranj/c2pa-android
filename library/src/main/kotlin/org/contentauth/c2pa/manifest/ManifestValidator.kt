@@ -1,0 +1,407 @@
+/*
+This file is licensed to you under the Apache License, Version 2.0
+(http://www.apache.org/licenses/LICENSE-2.0) or the MIT license
+(http://opensource.org/licenses/MIT), at your option.
+
+Unless required by applicable law or agreed to in writing, this software is
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS OF
+ANY KIND, either express or implied. See the LICENSE-MIT and LICENSE-APACHE
+files for the specific language governing permissions and limitations under
+each license.
+*/
+
+package org.contentauth.c2pa.manifest
+
+import android.util.Log
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+/**
+ * Validates C2PA manifests for spec compliance and provides warnings for common issues.
+ *
+ * This validator checks for compliance with C2PA 2.3 specification requirements
+ * and CAWG specification requirements.
+ *
+ * ## Usage
+ *
+ * ```kotlin
+ * val manifest = ManifestDefinition(...)
+ * val result = ManifestValidator.validate(manifest)
+ * if (result.hasErrors()) {
+ *     result.errors.forEach { println("Error: $it") }
+ * }
+ * if (result.hasWarnings()) {
+ *     result.warnings.forEach { println("Warning: $it") }
+ * }
+ * ```
+ */
+object ManifestValidator {
+
+    private const val TAG = "C2PA"
+
+    /**
+     * Deprecated assertion labels per C2PA 2.x specification.
+     * These are still supported but should not be used in new manifests.
+     */
+    val DEPRECATED_ASSERTION_LABELS: Set<String> = setOf(
+        "stds.exif",
+        "stds.iptc.photo-metadata",
+        "stds.schema-org.CreativeWork",
+        "c2pa.endorsement",
+    )
+
+    /**
+     * The current recommended claim version for C2PA 2.x specification.
+     */
+    const val RECOMMENDED_CLAIM_VERSION = 2
+
+    /**
+     * Result of manifest validation containing errors and warnings.
+     *
+     * @property errors Critical issues that violate spec requirements.
+     * @property warnings Non-critical issues that may indicate misuse.
+     */
+    data class ValidationResult(
+        val errors: List<String> = emptyList(),
+        val warnings: List<String> = emptyList(),
+    ) {
+        /** Returns true if there are any errors. */
+        fun hasErrors(): Boolean = errors.isNotEmpty()
+
+        /** Returns true if there are any warnings. */
+        fun hasWarnings(): Boolean = warnings.isNotEmpty()
+
+        /** Returns true if validation passed without errors. */
+        fun isValid(): Boolean = !hasErrors()
+    }
+
+    /**
+     * Validates a manifest definition for C2PA 2.3 spec compliance.
+     *
+     * @param manifest The manifest to validate.
+     * @return A ValidationResult with any errors or warnings found.
+     */
+    fun validate(manifest: ManifestDefinition): ValidationResult {
+        val errors = mutableListOf<String>()
+        val warnings = mutableListOf<String>()
+
+        // Check claim version
+        if (manifest.claimVersion != RECOMMENDED_CLAIM_VERSION) {
+            warnings.add(
+                "claim_version is ${manifest.claimVersion}, but C2PA 2.x recommends version $RECOMMENDED_CLAIM_VERSION. " +
+                    "Version 1 claims use legacy assertion formats and do not support created/gathered assertion separation.",
+            )
+        }
+
+        // Check for required fields
+        if (manifest.title.isBlank()) {
+            errors.add("Manifest title is required")
+        }
+
+        if (manifest.claimGeneratorInfo.isEmpty()) {
+            errors.add("At least one claim_generator_info entry is required")
+        }
+
+        // Check for deprecated assertions
+        checkDeprecatedAssertions(manifest.assertions, warnings)
+        checkDeprecatedAssertions(manifest.gatheredAssertions, warnings)
+
+        // Check for CAWG assertions in created assertions (should be in gathered)
+        manifest.assertions.forEach { assertion ->
+            if (assertion is AssertionDefinition.CawgIdentity) {
+                warnings.add(
+                    "CAWG identity assertion found in created assertions. " +
+                        "Per CAWG spec, identity assertions MUST be in gathered_assertions " +
+                        "rather than created assertions. Use ManifestDefinition.withCawgIdentity() " +
+                        "or move to gatheredAssertions.",
+                )
+            }
+        }
+
+        // Check for hard binding (informational for now as c2pa-rs adds it automatically)
+        val hasHardBinding = manifest.assertions.any { assertion ->
+            when (assertion) {
+                is AssertionDefinition.Custom -> {
+                    assertion.label.startsWith("c2pa.hash.")
+                }
+                else -> false
+            }
+        }
+        // Note: Hard binding is typically added by the SDK during signing,
+        // so we don't warn here. This check is for informational purposes.
+
+        // Validate assertion labels
+        manifest.assertions.forEach { assertion ->
+            validateAssertionLabel(assertion, warnings)
+        }
+        manifest.gatheredAssertions.forEach { assertion ->
+            validateAssertionLabel(assertion, warnings)
+        }
+
+        // Validate ingredients
+        manifest.ingredients.forEach { ingredient ->
+            if (ingredient.relationship == null) {
+                warnings.add(
+                    "Ingredient '${ingredient.title ?: "unnamed"}' has no relationship specified. " +
+                        "Consider using parentOf, componentOf, or inputTo.",
+                )
+            }
+        }
+
+        return ValidationResult(errors, warnings)
+    }
+
+    /**
+     * Validates that assertions in gatheredAssertions are appropriate.
+     *
+     * Gathered assertions should NOT be attributed to the signer. This typically
+     * includes CAWG identity assertions and other third-party signed assertions.
+     *
+     * @param manifest The manifest to validate.
+     * @return A ValidationResult focused on gathered assertions.
+     */
+    fun validateGatheredAssertions(manifest: ManifestDefinition): ValidationResult {
+        val warnings = mutableListOf<String>()
+
+        // Check that gathered assertions are appropriate types
+        manifest.gatheredAssertions.forEach { assertion ->
+            when (assertion) {
+                is AssertionDefinition.Actions -> {
+                    warnings.add(
+                        "Actions assertion found in gathered_assertions. " +
+                            "Actions are typically created by the signer and should be in " +
+                            "created assertions (assertions field) unless they come from " +
+                            "a third-party workflow component.",
+                    )
+                }
+                is AssertionDefinition.CawgIdentity -> {
+                    // This is correct - CAWG identity should be gathered
+                }
+                else -> {
+                    // Other types may be valid in gathered depending on workflow
+                }
+            }
+        }
+
+        return ValidationResult(warnings = warnings)
+    }
+
+    /**
+     * Checks if a CAWG identity assertion is properly placed in gathered assertions.
+     *
+     * @param manifest The manifest to check.
+     * @return True if CAWG identity assertions are properly placed (or not present).
+     */
+    fun isCawgIdentityProperlyPlaced(manifest: ManifestDefinition): Boolean {
+        // Check that no CAWG identity is in created assertions
+        val hasCawgInCreated = manifest.assertions.any { it is AssertionDefinition.CawgIdentity }
+        return !hasCawgInCreated
+    }
+
+    /**
+     * Returns a list of CAWG-specific validation issues.
+     *
+     * @param manifest The manifest to validate.
+     * @return List of CAWG compliance issues.
+     */
+    fun validateCawgCompliance(manifest: ManifestDefinition): List<String> {
+        val issues = mutableListOf<String>()
+
+        // Check for CAWG identity in wrong place
+        manifest.assertions.forEach { assertion ->
+            if (assertion is AssertionDefinition.CawgIdentity) {
+                issues.add(
+                    "CAWG identity assertion in created_assertions violates CAWG spec. " +
+                        "CAWG identity assertions MUST be gathered assertions.",
+                )
+            }
+        }
+
+        return issues
+    }
+
+    private fun validateAssertionLabel(assertion: AssertionDefinition, warnings: MutableList<String>) {
+        when (assertion) {
+            is AssertionDefinition.Custom -> {
+                val label = assertion.label
+                // Check for standard label patterns
+                if (!label.contains(".") && !label.contains(":")) {
+                    warnings.add(
+                        "Custom assertion label '$label' should use namespaced format " +
+                            "(e.g., 'com.example.custom' or vendor prefix).",
+                    )
+                }
+                // Check for common typos in standard labels
+                val commonTypos = mapOf(
+                    "c2pa.action" to "c2pa.actions",
+                    "stds.iptc" to "stds.iptc.photo-metadata",
+                    "cawg.training" to "cawg.ai_training_and_data_mining",
+                )
+                commonTypos[label]?.let { correct ->
+                    warnings.add("Label '$label' may be a typo. Did you mean '$correct'?")
+                }
+            }
+            else -> {
+                // Standard types have validated labels
+            }
+        }
+    }
+
+    /**
+     * Checks for deprecated assertion types and adds warnings.
+     */
+    private fun checkDeprecatedAssertions(
+        assertions: List<AssertionDefinition>,
+        warnings: MutableList<String>,
+    ) {
+        assertions.forEach { assertion ->
+            val label = assertion.baseLabel()
+            if (label in DEPRECATED_ASSERTION_LABELS) {
+                val replacement = getDeprecatedAssertionReplacement(label)
+                warnings.add(
+                    "Assertion '$label' is deprecated in C2PA 2.x. $replacement",
+                )
+            }
+        }
+    }
+
+    /**
+     * Returns replacement guidance for deprecated assertion labels.
+     */
+    private fun getDeprecatedAssertionReplacement(label: String): String = when (label) {
+        "stds.exif" -> "Consider using c2pa.metadata or embedding EXIF in the asset directly."
+        "stds.iptc.photo-metadata" -> "Consider using c2pa.metadata instead."
+        "stds.schema-org.CreativeWork" -> "Consider using c2pa.metadata instead."
+        "c2pa.endorsement" -> "Endorsement assertions are no longer supported in C2PA 2.x."
+        else -> "Check the C2PA 2.3 specification for current alternatives."
+    }
+
+    /**
+     * Validates a raw JSON manifest string and logs warnings to the console.
+     *
+     * This method parses the JSON and checks for:
+     * - Non-v2 claim versions
+     * - Deprecated assertion labels
+     * - CAWG assertions in wrong location
+     * - Other spec compliance issues
+     *
+     * @param manifestJson The manifest JSON string to validate.
+     * @param logWarnings If true (default), warnings are logged to the Android console.
+     * @return A ValidationResult with any errors or warnings found.
+     */
+    fun validateJson(manifestJson: String, logWarnings: Boolean = true): ValidationResult {
+        val errors = mutableListOf<String>()
+        val warnings = mutableListOf<String>()
+
+        try {
+            val json = Json { ignoreUnknownKeys = true }
+            val jsonObject = json.parseToJsonElement(manifestJson).jsonObject
+
+            // Check claim_version
+            val claimVersion = jsonObject["claim_version"]?.jsonPrimitive?.intOrNull
+            if (claimVersion != null && claimVersion != RECOMMENDED_CLAIM_VERSION) {
+                warnings.add(
+                    "claim_version is $claimVersion, but C2PA 2.x recommends version $RECOMMENDED_CLAIM_VERSION. " +
+                        "Version 1 claims use legacy assertion formats (c2pa.actions instead of c2pa.actions.v2) " +
+                        "and do not support created/gathered assertion separation.",
+                )
+            }
+
+            // Check assertions for deprecated labels
+            jsonObject["assertions"]?.jsonArray?.forEach { assertionElement ->
+                val assertionObj = assertionElement.jsonObject
+                val label = assertionObj["label"]?.jsonPrimitive?.content
+                if (label != null) {
+                    checkJsonAssertionLabel(label, warnings, "assertions")
+                }
+            }
+
+            // Check gathered_assertions for deprecated labels and CAWG placement
+            jsonObject["gathered_assertions"]?.jsonArray?.forEach { assertionElement ->
+                val assertionObj = assertionElement.jsonObject
+                val label = assertionObj["label"]?.jsonPrimitive?.content
+                if (label != null) {
+                    checkJsonAssertionLabel(label, warnings, "gathered_assertions")
+                }
+            }
+
+            // Check if CAWG identity is incorrectly in assertions (should be in gathered)
+            jsonObject["assertions"]?.jsonArray?.forEach { assertionElement ->
+                val assertionObj = assertionElement.jsonObject
+                val label = assertionObj["label"]?.jsonPrimitive?.content
+                if (label == "cawg.identity") {
+                    warnings.add(
+                        "CAWG identity assertion found in 'assertions' (created assertions). " +
+                            "Per CAWG spec, identity assertions MUST be in 'gathered_assertions'. " +
+                            "Move the cawg.identity assertion to gathered_assertions.",
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            errors.add("Failed to parse manifest JSON: ${e.message}")
+        }
+
+        // Log warnings if requested
+        if (logWarnings) {
+            logValidationResults(errors, warnings)
+        }
+
+        return ValidationResult(errors, warnings)
+    }
+
+    /**
+     * Checks a JSON assertion label for deprecation and issues.
+     */
+    private fun checkJsonAssertionLabel(
+        label: String,
+        warnings: MutableList<String>,
+        location: String,
+    ) {
+        // Check for deprecated labels
+        if (label in DEPRECATED_ASSERTION_LABELS) {
+            val replacement = getDeprecatedAssertionReplacement(label)
+            warnings.add(
+                "Assertion '$label' in $location is deprecated in C2PA 2.x. $replacement",
+            )
+        }
+
+        // Check for v1 action label when v2 should be used
+        if (label == "c2pa.actions") {
+            // This is informational - the SDK will convert it, but we note it
+            warnings.add(
+                "Using 'c2pa.actions' label. The SDK will automatically convert this to " +
+                    "'c2pa.actions.v2' for C2PA 2.x compliance.",
+            )
+        }
+    }
+
+    /**
+     * Logs validation results to the Android console.
+     */
+    private fun logValidationResults(errors: List<String>, warnings: List<String>) {
+        errors.forEach { error ->
+            Log.e(TAG, "Manifest validation error: $error")
+        }
+        warnings.forEach { warning ->
+            Log.w(TAG, "Manifest validation warning: $warning")
+        }
+    }
+
+    /**
+     * Validates and logs warnings for a ManifestDefinition.
+     *
+     * Convenience method that validates and logs in one call.
+     *
+     * @param manifest The manifest to validate.
+     * @return A ValidationResult with any errors or warnings found.
+     */
+    fun validateAndLog(manifest: ManifestDefinition): ValidationResult {
+        val result = validate(manifest)
+        logValidationResults(result.errors, result.warnings)
+        return result
+    }
+}

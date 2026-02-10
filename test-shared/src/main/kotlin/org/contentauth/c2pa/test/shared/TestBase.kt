@@ -38,10 +38,23 @@ abstract class TestBase {
     )
 
     companion object {
+        // Note: C2PA 2.3 spec requires first action to be "c2pa.created" or "c2pa.opened"
         const val TEST_MANIFEST_JSON =
             """{
             "claim_generator": "test_app/1.0",
-            "assertions": [{"label": "c2pa.test", "data": {"test": true}}]
+            "assertions": [
+                {
+                    "label": "c2pa.actions",
+                    "data": {
+                        "actions": [
+                            {
+                                "action": "c2pa.created",
+                                "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture"
+                            }
+                        ]
+                    }
+                }
+            ]
         }"""
 
         /** Load a test resource from the classpath (test-shared module resources). */

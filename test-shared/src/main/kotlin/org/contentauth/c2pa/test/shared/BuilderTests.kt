@@ -418,7 +418,8 @@ abstract class BuilderTests : TestBase() {
                                     )
                                 try {
                                     val json = reader.json()
-                                    json.contains("\"c2pa.test\"")
+                                    // Check for c2pa.created action which is in TEST_MANIFEST_JSON
+                                    json.contains("\"c2pa.created\"")
                                 } finally {
                                     reader.close()
                                 }
@@ -427,7 +428,7 @@ abstract class BuilderTests : TestBase() {
                             }
                         } else {
                             val manifest = C2PA.readFile(fileTest.absolutePath)
-                            manifest.contains("\"c2pa.test\"")
+                            manifest.contains("\"c2pa.created\"")
                         }
 
                     freshStream.close()

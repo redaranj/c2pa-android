@@ -89,6 +89,32 @@ sealed class AssertionDefinition {
     ) : AssertionDefinition()
 
     /**
+     * A CAWG identity assertion for identity verification.
+     *
+     * **Important**: Per the CAWG specification, identity assertions MUST be included
+     * as gathered assertions rather than created assertions. Use
+     * [ManifestDefinition.withCawgIdentity] or place these in `gatheredAssertions`.
+     *
+     * @property data The identity assertion data as key-value pairs.
+     * @see ManifestDefinition.withCawgIdentity
+     */
+    data class CawgIdentity(
+        val data: Map<String, JsonElement>,
+    ) : AssertionDefinition()
+
+    /**
+     * A CAWG AI training and data mining assertion.
+     *
+     * This follows the CAWG AI Training and Data Mining specification format,
+     * which is distinct from the C2PA training-mining assertion.
+     *
+     * @property entries The CAWG training/mining permission entries.
+     */
+    data class CawgTrainingMining(
+        val entries: List<CawgTrainingMiningEntry>,
+    ) : AssertionDefinition()
+
+    /**
      * A custom assertion with an arbitrary label and data.
      *
      * @property label The assertion label.
@@ -98,6 +124,24 @@ sealed class AssertionDefinition {
         val label: String,
         val data: JsonElement,
     ) : AssertionDefinition()
+
+    /**
+     * Returns the base label for this assertion type.
+     *
+     * The base label is used by the SDK to determine whether this assertion should be
+     * placed in `created_assertions` or `gathered_assertions` based on the
+     * `builder.created_assertion_labels` setting.
+     */
+    fun baseLabel(): String = when (this) {
+        is Actions -> "c2pa.actions"
+        is CreativeWork -> "stds.schema-org.CreativeWork"
+        is Exif -> "stds.exif"
+        is IptcPhotoMetadata -> "stds.iptc.photo-metadata"
+        is TrainingMining -> "c2pa.training-mining"
+        is CawgIdentity -> "cawg.identity"
+        is CawgTrainingMining -> "cawg.ai_training_and_data_mining"
+        is Custom -> label
+    }
 
     companion object {
         /**
@@ -124,9 +168,23 @@ sealed class AssertionDefinition {
         fun exif(data: Map<String, JsonElement>) = Exif(data)
 
         /**
-         * Creates a training/mining assertion.
+         * Creates a training/mining assertion (C2PA format).
          */
         fun trainingMining(entries: List<TrainingMiningEntry>) = TrainingMining(entries)
+
+        /**
+         * Creates a CAWG identity assertion.
+         *
+         * **Important**: This assertion MUST be placed in `gatheredAssertions` rather than
+         * `assertions` per the CAWG specification. Use [ManifestDefinition.withCawgIdentity]
+         * for convenience.
+         */
+        fun cawgIdentity(data: Map<String, JsonElement>) = CawgIdentity(data)
+
+        /**
+         * Creates a CAWG AI training and data mining assertion.
+         */
+        fun cawgTrainingMining(entries: List<CawgTrainingMiningEntry>) = CawgTrainingMining(entries)
 
         /**
          * Creates a custom assertion.
@@ -136,7 +194,7 @@ sealed class AssertionDefinition {
 }
 
 /**
- * Represents a training/mining permission entry.
+ * Represents a training/mining permission entry (C2PA format).
  *
  * @property use The type of use (e.g., "allowed", "notAllowed", "constrained").
  * @property constraint Optional constraint URL or description.
@@ -146,6 +204,28 @@ data class TrainingMiningEntry(
     val use: String,
     @SerialName("constraint_info")
     val constraintInfo: String? = null,
+)
+
+/**
+ * Represents a CAWG AI training and data mining permission entry.
+ *
+ * This follows the CAWG specification format which has additional fields
+ * compared to the C2PA training-mining assertion.
+ *
+ * @property use The use permission: "allowed", "notAllowed", or "constrained".
+ * @property constraintInfo Optional constraint information URI.
+ * @property aiModelLearningType Optional learning type: "dataAggregation" or "machineLearning".
+ * @property aiMiningType Optional mining type: "dataAggregation" or "other".
+ */
+@Serializable
+data class CawgTrainingMiningEntry(
+    val use: String,
+    @SerialName("constraint_info")
+    val constraintInfo: String? = null,
+    @SerialName("ai_model_learning_type")
+    val aiModelLearningType: String? = null,
+    @SerialName("ai_mining_type")
+    val aiMiningType: String? = null,
 )
 
 /**
@@ -181,6 +261,16 @@ internal object AssertionDefinitionSerializer : KSerializer<AssertionDefinition>
             }
             is AssertionDefinition.TrainingMining -> buildJsonObject {
                 put("label", StandardAssertionLabel.TRAINING_MINING.serialName())
+                put("data", buildJsonObject {
+                    put("entries", jsonEncoder.json.encodeToJsonElement(value.entries))
+                })
+            }
+            is AssertionDefinition.CawgIdentity -> buildJsonObject {
+                put("label", StandardAssertionLabel.CAWG_IDENTITY.serialName())
+                put("data", JsonObject(value.data))
+            }
+            is AssertionDefinition.CawgTrainingMining -> buildJsonObject {
+                put("label", StandardAssertionLabel.CAWG_AI_TRAINING.serialName())
                 put("data", buildJsonObject {
                     put("entries", jsonEncoder.json.encodeToJsonElement(value.entries))
                 })
@@ -234,6 +324,18 @@ internal object AssertionDefinitionSerializer : KSerializer<AssertionDefinition>
                     )
                 } ?: emptyList()
                 AssertionDefinition.TrainingMining(entries)
+            }
+            StandardAssertionLabel.CAWG_IDENTITY.serialName() -> {
+                AssertionDefinition.CawgIdentity(data.toMap())
+            }
+            StandardAssertionLabel.CAWG_AI_TRAINING.serialName() -> {
+                val entries = data["entries"]?.let {
+                    jsonDecoder.json.decodeFromJsonElement(
+                        kotlinx.serialization.builtins.ListSerializer(CawgTrainingMiningEntry.serializer()),
+                        it,
+                    )
+                } ?: emptyList()
+                AssertionDefinition.CawgTrainingMining(entries)
             }
             else -> {
                 AssertionDefinition.Custom(label, JsonObject(data))

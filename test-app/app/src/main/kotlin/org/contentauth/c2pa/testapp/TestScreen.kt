@@ -228,6 +228,9 @@ private suspend fun runAllTests(context: Context): List<TestResult> = withContex
     results.add(manifestTests.testCreatedFactory())
     results.add(manifestTests.testAllValidationStatusCodes())
     results.add(manifestTests.testAllDigitalSourceTypes())
+    results.add(manifestTests.testGatheredAssertions())
+    results.add(manifestTests.testGatheredAssertionsWithBuilder())
+    results.add(manifestTests.testGatheredAssertionsForC2PAToolValidation())
 
     results
 }

@@ -1,6 +1,7 @@
 .PHONY: all clean setup library publish download-binaries tests coverage help test-app example-app \
         run-test-app run-example-app signing-server-start signing-server-stop signing-server-status \
-        signing-server-build tests-with-server lint format docs docs-clean
+        signing-server-build tests-with-server lint format docs docs-clean c2patool-download \
+        c2patool-validate tests-with-c2patool
 
 # Default target
 all: library
@@ -100,6 +101,25 @@ docs-clean:
 	@rm -f library/build/libs/c2pa-release-javadoc.jar
 	@echo "Documentation cleaned"
 
+# c2patool configuration
+C2PATOOL_VERSION := 0.26.27
+C2PATOOL_DIR := .c2patool
+C2PATOOL := $(C2PATOOL_DIR)/c2patool
+
+# Detect OS and architecture for c2patool download
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
+
+ifeq ($(UNAME_S),Darwin)
+    C2PATOOL_PLATFORM := universal-apple-darwin
+else ifeq ($(UNAME_S),Linux)
+    ifeq ($(UNAME_M),x86_64)
+        C2PATOOL_PLATFORM := x86_64-unknown-linux-gnu
+    else ifeq ($(UNAME_M),aarch64)
+        C2PATOOL_PLATFORM := aarch64-unknown-linux-gnu
+    endif
+endif
+
 # File to store the server PID
 SIGNING_SERVER_PID_FILE := .signing-server.pid
 
@@ -195,6 +215,49 @@ tests-with-server: signing-server-start
 	@echo "All tests completed with coverage reports generated"
 	@echo "Coverage report: library/build/reports/jacoco/jacocoInstrumentedTestReport/html/index.html"
 
+# c2patool targets for external validation
+
+# Download c2patool if not present
+$(C2PATOOL):
+	@mkdir -p $(C2PATOOL_DIR)
+	@echo "Downloading c2patool $(C2PATOOL_VERSION) for $(C2PATOOL_PLATFORM)..."
+ifeq ($(UNAME_S),Darwin)
+	@curl -sL "https://github.com/contentauth/c2pa-rs/releases/download/c2patool-v$(C2PATOOL_VERSION)/c2patool-v$(C2PATOOL_VERSION)-$(C2PATOOL_PLATFORM).zip" -o $(C2PATOOL_DIR)/c2patool.zip
+	@unzip -q $(C2PATOOL_DIR)/c2patool.zip -d $(C2PATOOL_DIR)
+	@mv $(C2PATOOL_DIR)/c2patool/c2patool $(C2PATOOL_DIR)/c2patool-bin && rm -rf $(C2PATOOL_DIR)/c2patool && mv $(C2PATOOL_DIR)/c2patool-bin $(C2PATOOL)
+	@rm $(C2PATOOL_DIR)/c2patool.zip
+else
+	@curl -sL "https://github.com/contentauth/c2pa-rs/releases/download/c2patool-v$(C2PATOOL_VERSION)/c2patool-v$(C2PATOOL_VERSION)-$(C2PATOOL_PLATFORM).tar.gz" -o $(C2PATOOL_DIR)/c2patool.tar.gz
+	@tar -xzf $(C2PATOOL_DIR)/c2patool.tar.gz -C $(C2PATOOL_DIR)
+	@mv $(C2PATOOL_DIR)/c2patool/c2patool $(C2PATOOL_DIR)/c2patool-bin && rm -rf $(C2PATOOL_DIR)/c2patool && mv $(C2PATOOL_DIR)/c2patool-bin $(C2PATOOL)
+	@rm $(C2PATOOL_DIR)/c2patool.tar.gz
+endif
+	@chmod +x $(C2PATOOL)
+	@echo "c2patool $(C2PATOOL_VERSION) installed at $(C2PATOOL)"
+
+# Download c2patool (explicit target)
+c2patool-download: $(C2PATOOL)
+	@echo "c2patool ready at $(C2PATOOL)"
+
+# Validate a file with c2patool
+# Usage: make c2patool-validate FILE=path/to/file.jpg
+c2patool-validate: $(C2PATOOL)
+ifndef FILE
+	@echo "Error: FILE parameter required"
+	@echo "Usage: make c2patool-validate FILE=path/to/file.jpg"
+	@exit 1
+endif
+	@echo "Validating $(FILE) with c2patool..."
+	@$(C2PATOOL) $(FILE) --detailed
+
+# Run tests with c2patool validation
+tests-with-c2patool: c2patool-download tests
+	@echo "Tests completed. c2patool available at $(C2PATOOL) for manual validation"
+
+# Get c2patool version
+c2patool-version: $(C2PATOOL)
+	@$(C2PATOOL) --version
+
 # Helper to show available targets
 help:
 	@echo "Available targets:"
@@ -208,6 +271,7 @@ help:
 	@echo "Testing:"
 	@echo "  tests                 - Run all tests including hardware signing tests"
 	@echo "  tests-with-server     - Run all tests with automatic signing server management"
+	@echo "  tests-with-c2patool   - Run tests with c2patool available for validation"
 	@echo "  coverage              - Generate test coverage report (requires device)"
 	@echo ""
 	@echo "Code Quality:"
@@ -234,6 +298,11 @@ help:
 	@echo ""
 	@echo "Publishing:"
 	@echo "  publish               - Publish library to GitHub packages"
+	@echo ""
+	@echo "c2patool (external validation):"
+	@echo "  c2patool-download     - Download c2patool binary"
+	@echo "  c2patool-validate     - Validate a file (FILE=path/to/file.jpg)"
+	@echo "  c2patool-version      - Show c2patool version"
 	@echo ""
 	@echo "Usage examples:"
 	@echo "  make tests            - Run all tests (start server first if testing hardware signing)"

@@ -151,4 +151,40 @@ class AndroidManifestTests : ManifestTests() {
         val result = testAllDigitalSourceTypes()
         assertTrue(result.success, "All Digital Source Types test failed: ${result.message}")
     }
+
+    @Test
+    fun runTestManifestValidator() = runBlocking {
+        val result = testManifestValidator()
+        assertTrue(result.success, "Manifest Validator test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestWithAssertionsFactory() = runBlocking {
+        val result = testWithAssertionsFactory()
+        assertTrue(result.success, "WithAssertions Factory test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestDeprecatedAssertionValidation() = runBlocking {
+        val result = testDeprecatedAssertionValidation()
+        assertTrue(result.success, "Deprecated Assertion Validation test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestAllPredefinedActions() = runBlocking {
+        val result = testAllPredefinedActions()
+        assertTrue(result.success, "All Predefined Actions test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestAllIngredientRelationships() = runBlocking {
+        val result = testAllIngredientRelationships()
+        assertTrue(result.success, "All Ingredient Relationships test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestRedactions() = runBlocking {
+        val result = testRedactions()
+        assertTrue(result.success, "Redactions test failed: ${result.message}")
+    }
 }
