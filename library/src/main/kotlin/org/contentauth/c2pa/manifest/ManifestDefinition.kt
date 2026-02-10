@@ -15,7 +15,7 @@ package org.contentauth.c2pa.manifest
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
+import org.contentauth.c2pa.C2PAJson
 
 /**
  * Defines a C2PA manifest for content authenticity.
@@ -120,29 +120,18 @@ data class ManifestDefinition(
      *
      * @return The manifest as a JSON string.
      */
-    fun toJson(): String = json.encodeToString(this)
+    fun toJson(): String = C2PAJson.default.encodeToString(this)
 
     /**
      * Converts this manifest definition to a pretty-printed JSON string.
      *
      * @return The manifest as a formatted JSON string.
      */
-    fun toPrettyJson(): String = prettyJson.encodeToString(this)
+    fun toPrettyJson(): String = C2PAJson.pretty.encodeToString(this)
 
     override fun toString(): String = toJson()
 
     companion object {
-        private val json = Json {
-            encodeDefaults = false
-            ignoreUnknownKeys = true
-        }
-
-        private val prettyJson = Json {
-            encodeDefaults = false
-            ignoreUnknownKeys = true
-            prettyPrint = true
-        }
-
         /**
          * Parses a ManifestDefinition from a JSON string.
          *
@@ -150,7 +139,7 @@ data class ManifestDefinition(
          * @return The parsed ManifestDefinition.
          */
         fun fromJson(jsonString: String): ManifestDefinition =
-            json.decodeFromString(jsonString)
+            C2PAJson.default.decodeFromString(jsonString)
 
         /**
          * Creates a minimal manifest definition for a newly created asset.

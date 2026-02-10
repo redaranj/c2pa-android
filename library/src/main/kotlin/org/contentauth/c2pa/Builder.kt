@@ -301,29 +301,26 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
      * ingredients are required.
      *
      * @param intent The [BuilderIntent] specifying the type of manifest
+     * @return This builder for fluent chaining
      * @throws C2PAError.Api if the intent cannot be set
      *
      * @sample
      * ```kotlin
      * val builder = Builder.fromJson(manifestJson)
-     * builder.setIntent(BuilderIntent.Create(DigitalSourceType.DIGITAL_CAPTURE))
-     * ```
-     *
-     * @sample
-     * ```kotlin
-     * val builder = Builder.fromJson(manifestJson)
-     * builder.setIntent(BuilderIntent.Edit)
+     *     .setIntent(BuilderIntent.Create(DigitalSourceType.DIGITAL_CAPTURE))
+     *     .addAction(Action(PredefinedAction.CREATED))
      * ```
      *
      * @see BuilderIntent
      * @see DigitalSourceType
      */
     @Throws(C2PAError::class)
-    fun setIntent(intent: BuilderIntent) {
+    fun setIntent(intent: BuilderIntent): Builder {
         val result = setIntentNative(ptr, intent.toNativeIntent(), intent.toNativeDigitalSourceType())
         if (result < 0) {
             throw C2PAError.Api(C2PA.getError() ?: "Failed to set intent")
         }
+        return this
     }
 
     /**
@@ -334,54 +331,87 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
      * history.
      *
      * @param action The [Action] to add to the manifest
+     * @return This builder for fluent chaining
      * @throws C2PAError.Api if the action cannot be added
      *
      * @sample
      * ```kotlin
      * val builder = Builder.fromJson(manifestJson)
-     * builder.addAction(Action(PredefinedAction.EDITED, DigitalSourceType.DIGITAL_CAPTURE))
-     * builder.addAction(Action(PredefinedAction.CROPPED, DigitalSourceType.DIGITAL_CAPTURE))
+     *     .addAction(Action(PredefinedAction.EDITED, DigitalSourceType.DIGITAL_CAPTURE))
+     *     .addAction(Action(PredefinedAction.CROPPED, DigitalSourceType.DIGITAL_CAPTURE))
      * ```
      *
      * @see Action
      * @see PredefinedAction
      */
     @Throws(C2PAError::class)
-    fun addAction(action: Action) {
+    fun addAction(action: Action): Builder {
         val result = addActionNative(ptr, action.toJson())
         if (result < 0) {
             throw C2PAError.Api(C2PA.getError() ?: "Failed to add action")
         }
+        return this
     }
 
-    /** Set the no-embed flag */
-    fun setNoEmbed() = setNoEmbedNative(ptr)
+    /**
+     * Sets the no-embed flag, preventing the manifest from being embedded in the asset.
+     *
+     * @return This builder for fluent chaining
+     */
+    fun setNoEmbed(): Builder {
+        setNoEmbedNative(ptr)
+        return this
+    }
 
-    /** Set the remote URL */
+    /**
+     * Sets a remote URL where the manifest will be hosted.
+     *
+     * @param url The remote URL for the manifest
+     * @return This builder for fluent chaining
+     * @throws C2PAError.Api if the remote URL cannot be set
+     */
     @Throws(C2PAError::class)
-    fun setRemoteURL(url: String) {
+    fun setRemoteURL(url: String): Builder {
         val result = setRemoteUrlNative(ptr, url)
         if (result < 0) {
             throw C2PAError.Api(C2PA.getError() ?: "Failed to set remote URL")
         }
+        return this
     }
 
-    /** Add a resource to the builder */
+    /**
+     * Adds a resource to the builder.
+     *
+     * @param uri The URI identifying the resource
+     * @param stream The stream containing the resource data
+     * @return This builder for fluent chaining
+     * @throws C2PAError.Api if the resource cannot be added
+     */
     @Throws(C2PAError::class)
-    fun addResource(uri: String, stream: Stream) {
+    fun addResource(uri: String, stream: Stream): Builder {
         val result = addResourceNative(ptr, uri, stream.rawPtr)
         if (result < 0) {
             throw C2PAError.Api(C2PA.getError() ?: "Failed to add resource")
         }
+        return this
     }
 
-    /** Add an ingredient from a stream */
+    /**
+     * Adds an ingredient from a stream.
+     *
+     * @param ingredientJSON JSON describing the ingredient
+     * @param format The MIME type of the ingredient (e.g., "image/jpeg")
+     * @param source The stream containing the ingredient data
+     * @return This builder for fluent chaining
+     * @throws C2PAError.Api if the ingredient cannot be added
+     */
     @Throws(C2PAError::class)
-    fun addIngredient(ingredientJSON: String, format: String, source: Stream) {
+    fun addIngredient(ingredientJSON: String, format: String, source: Stream): Builder {
         val result = addIngredientFromStreamNative(ptr, ingredientJSON, format, source.rawPtr)
         if (result < 0) {
             throw C2PAError.Api(C2PA.getError() ?: "Failed to add ingredient")
         }
+        return this
     }
 
     /** Write the builder to an archive */

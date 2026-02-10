@@ -39,7 +39,6 @@ class WebServiceSigner(
     private val bearerToken: String? = null,
     private val customHeaders: Map<String, String> = emptyMap(),
 ) {
-
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true

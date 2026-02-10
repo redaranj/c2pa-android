@@ -13,8 +13,8 @@ each license.
 package org.contentauth.c2pa.manifest
 
 import android.util.Log
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import org.contentauth.c2pa.C2PAJson
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -298,8 +298,7 @@ object ManifestValidator {
         val warnings = mutableListOf<String>()
 
         try {
-            val json = Json { ignoreUnknownKeys = true }
-            val jsonObject = json.parseToJsonElement(manifestJson).jsonObject
+            val jsonObject = C2PAJson.default.parseToJsonElement(manifestJson).jsonObject
 
             // Check claim_version
             val claimVersion = jsonObject["claim_version"]?.jsonPrimitive?.intOrNull
