@@ -187,4 +187,100 @@ class AndroidManifestTests : ManifestTests() {
         val result = testRedactions()
         assertTrue(result.success, "Redactions test failed: ${result.message}")
     }
+
+    @Test
+    fun runTestGatheredAssertions() = runBlocking {
+        val result = testGatheredAssertions()
+        assertTrue(result.success, "Gathered Assertions test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestCawgIdentityAssertion() = runBlocking {
+        val result = testCawgIdentityAssertion()
+        assertTrue(result.success, "CAWG Identity Assertion test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestCawgTrainingMiningAssertion() = runBlocking {
+        val result = testCawgTrainingMiningAssertion()
+        assertTrue(result.success, "CAWG Training Mining Assertion test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestEditedFactory() = runBlocking {
+        val result = testEditedFactory()
+        assertTrue(result.success, "Edited Factory test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestGatheredAssertionsWithBuilder() = runBlocking {
+        val result = testGatheredAssertionsWithBuilder()
+        assertTrue(result.success, "Gathered Assertions with Builder test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestGatheredAssertionsForC2PAToolValidation() = runBlocking {
+        val result = testGatheredAssertionsForC2PAToolValidation()
+        assertTrue(result.success, "Gathered Assertions C2PA Tool Validation test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestSettingsValidatorValid() = runBlocking {
+        val result = testSettingsValidatorValid()
+        assertTrue(result.success, "Settings Validator Valid test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestSettingsValidatorErrors() = runBlocking {
+        val result = testSettingsValidatorErrors()
+        assertTrue(result.success, "Settings Validator Errors test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestSettingsValidatorBuilderSection() = runBlocking {
+        val result = testSettingsValidatorBuilderSection()
+        assertTrue(result.success, "Settings Validator Builder Section test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestSettingsValidatorSignerSection() = runBlocking {
+        val result = testSettingsValidatorSignerSection()
+        assertTrue(result.success, "Settings Validator Signer Section test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestManifestValidatorGatheredAssertions() = runBlocking {
+        val result = testManifestValidatorGatheredAssertions()
+        assertTrue(result.success, "Manifest Validator Gathered Assertions test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestManifestValidatorCawgCompliance() = runBlocking {
+        val result = testManifestValidatorCawgCompliance()
+        assertTrue(result.success, "Manifest Validator CAWG Compliance test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestDigitalSourceTypeFromIptcUrl() = runBlocking {
+        val result = testDigitalSourceTypeFromIptcUrl()
+        assertTrue(result.success, "DigitalSourceType fromIptcUrl test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestManifestCreatedAssertionLabels() = runBlocking {
+        val result = testManifestCreatedAssertionLabels()
+        assertTrue(result.success, "ManifestDefinition createdAssertionLabels test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestManifestToPrettyJson() = runBlocking {
+        val result = testManifestToPrettyJson()
+        assertTrue(result.success, "ManifestDefinition toPrettyJson test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestIptcPhotoMetadata() = runBlocking {
+        val result = testIptcPhotoMetadata()
+        assertTrue(result.success, "IptcPhotoMetadata test failed: ${result.message}")
+    }
 }

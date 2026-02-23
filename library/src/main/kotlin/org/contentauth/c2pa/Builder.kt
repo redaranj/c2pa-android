@@ -167,7 +167,10 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
         @JvmStatic
         @Throws(C2PAError::class)
         fun fromJson(manifestJSON: String): Builder {
-            ManifestValidator.validateJson(manifestJSON, logWarnings = true)
+            val validation = ManifestValidator.validateJson(manifestJSON, logWarnings = true)
+            if (validation.hasErrors()) {
+                throw C2PAError.Api(validation.errors.joinToString("; "))
+            }
 
             val labelsArray = DEFAULT_CREATED_ASSERTION_LABELS.joinToString(", ") { "\"$it\"" }
             val settingsJson = """
@@ -264,7 +267,10 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
         @JvmStatic
         @Throws(C2PAError::class)
         fun fromJson(manifestJSON: String, settings: C2paSettings): Builder {
-            ManifestValidator.validateJson(manifestJSON, logWarnings = true)
+            val validation = ManifestValidator.validateJson(manifestJSON, logWarnings = true)
+            if (validation.hasErrors()) {
+                throw C2PAError.Api(validation.errors.joinToString("; "))
+            }
 
             val context = C2paContext(settings)
             val builder = fromContext(context).withDefinition(manifestJSON)

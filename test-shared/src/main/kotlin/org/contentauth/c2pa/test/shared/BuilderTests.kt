@@ -655,6 +655,355 @@ abstract class BuilderTests : TestBase() {
         }
     }
 
+    suspend fun testBuilderFromJsonWithSettings(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Builder fromJson with C2paSettings") {
+            val manifestJson = TEST_MANIFEST_JSON
+
+            try {
+                val settingsJson = """
+                    {
+                        "version": 1,
+                        "builder": {
+                            "created_assertion_labels": ["c2pa.actions"]
+                        }
+                    }
+                """.trimIndent()
+
+                val settings = C2paSettings().apply {
+                    updateFromString(settingsJson, "json")
+                }
+                val builder = Builder.fromJson(manifestJson, settings)
+                settings.close()
+
+                try {
+                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                    val sourceStream = ByteArrayStream(sourceImageData)
+                    val fileTest = File.createTempFile("c2pa-fromjson-settings-test", ".jpg")
+                    val destStream = FileStream(fileTest)
+
+                    try {
+                        val certPem = loadResourceAsString("es256_certs")
+                        val keyPem = loadResourceAsString("es256_private")
+                        val signer = Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem))
+
+                        try {
+                            builder.sign("image/jpeg", sourceStream, destStream, signer)
+
+                            val manifest = C2PA.readFile(fileTest.absolutePath)
+                            val json = JSONObject(manifest)
+                            val hasManifests = json.has("manifests")
+                            val hasCreatedAction = manifest.contains("c2pa.created")
+                            val success = hasManifests && hasCreatedAction
+
+                            TestResult(
+                                "Builder fromJson with C2paSettings",
+                                success,
+                                if (success) {
+                                    "fromJson(manifest, settings) works"
+                                } else {
+                                    "Failed to sign with fromJson(manifest, settings)"
+                                },
+                                "Has manifests: $hasManifests, Has created action: $hasCreatedAction",
+                            )
+                        } finally {
+                            signer.close()
+                        }
+                    } finally {
+                        sourceStream.close()
+                        destStream.close()
+                        fileTest.delete()
+                    }
+                } finally {
+                    builder.close()
+                }
+            } catch (e: Exception) {
+                TestResult(
+                    "Builder fromJson with C2paSettings",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testBuilderWithArchive(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Builder withArchive") {
+            val manifestJson = TEST_MANIFEST_JSON
+
+            try {
+                val originalBuilder = Builder.fromJson(manifestJson)
+                try {
+                    originalBuilder.setNoEmbed()
+                    val archiveStream = ByteArrayStream()
+                    try {
+                        originalBuilder.toArchive(archiveStream)
+                        val archiveData = archiveStream.getData()
+
+                        val context = C2paContext()
+                        val newArchiveStream = ByteArrayStream(archiveData)
+                        val newBuilder = Builder.fromContext(context).withArchive(newArchiveStream)
+                        context.close()
+                        newArchiveStream.close()
+
+                        var signSuccess = false
+                        try {
+                            val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                            val sourceStream = ByteArrayStream(sourceImageData)
+                            val fileTest = File.createTempFile("c2pa-witharchive-test", ".jpg")
+                            val destStream = FileStream(fileTest)
+
+                            try {
+                                val certPem = loadResourceAsString("es256_certs")
+                                val keyPem = loadResourceAsString("es256_private")
+                                val signer = Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem))
+
+                                try {
+                                    newBuilder.sign("image/jpeg", sourceStream, destStream, signer)
+                                    val manifest = C2PA.readFile(fileTest.absolutePath)
+                                    signSuccess = manifest.contains("c2pa.created")
+                                } finally {
+                                    signer.close()
+                                }
+                            } finally {
+                                sourceStream.close()
+                                destStream.close()
+                                fileTest.delete()
+                            }
+                        } finally {
+                            newBuilder.close()
+                        }
+
+                        val success = archiveData.isNotEmpty() && signSuccess
+                        TestResult(
+                            "Builder withArchive",
+                            success,
+                            if (success) {
+                                "withArchive round-trip successful"
+                            } else {
+                                "withArchive round-trip failed"
+                            },
+                            "Archive size: ${archiveData.size}, Sign success: $signSuccess",
+                        )
+                    } finally {
+                        archiveStream.close()
+                    }
+                } finally {
+                    originalBuilder.close()
+                }
+            } catch (e: Exception) {
+                TestResult(
+                    "Builder withArchive",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testReaderFromContext(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Reader fromContext with withStream") {
+            try {
+                // First, sign an image so we have something to read
+                val builder = Builder.fromJson(TEST_MANIFEST_JSON)
+                val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                val sourceStream = ByteArrayStream(sourceImageData)
+                val fileTest = File.createTempFile("c2pa-reader-context-test", ".jpg")
+                val destStream = FileStream(fileTest)
+                val certPem = loadResourceAsString("es256_certs")
+                val keyPem = loadResourceAsString("es256_private")
+                val signer = Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem))
+
+                builder.sign("image/jpeg", sourceStream, destStream, signer)
+                sourceStream.close()
+                destStream.close()
+                signer.close()
+                builder.close()
+
+                // Now read using the context-based API
+                val signedData = fileTest.readBytes()
+                val signedStream = ByteArrayStream(signedData)
+
+                val context = C2paContext()
+                val reader = Reader.fromContext(context).withStream("image/jpeg", signedStream)
+                context.close()
+
+                try {
+                    val json = reader.json()
+                    val hasManifests = json.contains("manifests")
+                    val hasCreatedAction = json.contains("c2pa.created")
+                    val isEmbedded = reader.isEmbedded()
+                    val remoteUrl = reader.remoteUrl()
+
+                    val success = hasManifests && hasCreatedAction && isEmbedded && remoteUrl == null
+
+                    TestResult(
+                        "Reader fromContext with withStream",
+                        success,
+                        if (success) {
+                            "Context-based reader works"
+                        } else {
+                            "Context-based reader failed"
+                        },
+                        "Has manifests: $hasManifests, Has created action: $hasCreatedAction, " +
+                            "Is embedded: $isEmbedded, Remote URL: $remoteUrl",
+                    )
+                } finally {
+                    reader.close()
+                    signedStream.close()
+                    fileTest.delete()
+                }
+            } catch (e: Exception) {
+                TestResult(
+                    "Reader fromContext with withStream",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testSettingsSetValue(): TestResult = withContext(Dispatchers.IO) {
+        runTest("C2paSettings setValue") {
+            try {
+                val settings = C2paSettings()
+                    .updateFromString("""{"version": 1}""", "json")
+                    .setValue("verify.verify_after_sign", "false")
+
+                val context = C2paContext(settings)
+                settings.close()
+
+                val builder = Builder.fromContext(context)
+                    .withDefinition(TEST_MANIFEST_JSON)
+                context.close()
+
+                try {
+                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                    val sourceStream = ByteArrayStream(sourceImageData)
+                    val fileTest = File.createTempFile("c2pa-setvalue-test", ".jpg")
+                    val destStream = FileStream(fileTest)
+
+                    try {
+                        val certPem = loadResourceAsString("es256_certs")
+                        val keyPem = loadResourceAsString("es256_private")
+                        val signer = Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem))
+
+                        try {
+                            builder.sign("image/jpeg", sourceStream, destStream, signer)
+                            val manifest = C2PA.readFile(fileTest.absolutePath)
+                            val success = manifest.contains("manifests")
+
+                            TestResult(
+                                "C2paSettings setValue",
+                                success,
+                                if (success) {
+                                    "setValue works for building context"
+                                } else {
+                                    "setValue failed"
+                                },
+                                "Signed with setValue-configured settings",
+                            )
+                        } finally {
+                            signer.close()
+                        }
+                    } finally {
+                        sourceStream.close()
+                        destStream.close()
+                        fileTest.delete()
+                    }
+                } finally {
+                    builder.close()
+                }
+            } catch (e: Exception) {
+                TestResult(
+                    "C2paSettings setValue",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testBuilderIntentEditAndUpdate(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Builder Intent Edit and Update") {
+            try {
+                // Test Edit intent -- requires a parent ingredient
+                val builder = Builder.fromJson(TEST_MANIFEST_JSON)
+                try {
+                    builder.setIntent(BuilderIntent.Edit)
+
+                    // Add a parent ingredient (required for Edit)
+                    val ingredientImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                    val ingredientStream = ByteArrayStream(ingredientImageData)
+                    builder.addIngredient(
+                        """{"title": "Parent Image", "format": "image/jpeg"}""",
+                        "image/jpeg",
+                        ingredientStream,
+                    )
+                    ingredientStream.close()
+
+                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                    val sourceStream = ByteArrayStream(sourceImageData)
+                    val fileTest = File.createTempFile("c2pa-edit-intent-test", ".jpg")
+                    val destStream = FileStream(fileTest)
+
+                    try {
+                        val certPem = loadResourceAsString("es256_certs")
+                        val keyPem = loadResourceAsString("es256_private")
+                        val signer = Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem))
+
+                        try {
+                            builder.sign("image/jpeg", sourceStream, destStream, signer)
+                            val manifest = C2PA.readFile(fileTest.absolutePath)
+                            val editSuccess = manifest.contains("manifests")
+
+                            // Test Update intent
+                            val builder2 = Builder.fromJson(TEST_MANIFEST_JSON)
+                            try {
+                                builder2.setIntent(BuilderIntent.Update)
+
+                                val updateSuccess = true // setIntent didn't throw
+
+                                val success = editSuccess && updateSuccess
+
+                                TestResult(
+                                    "Builder Intent Edit and Update",
+                                    success,
+                                    if (success) {
+                                        "Edit and Update intents work"
+                                    } else {
+                                        "Intent test failed"
+                                    },
+                                    "Edit signed: $editSuccess, Update set: $updateSuccess",
+                                )
+                            } finally {
+                                builder2.close()
+                            }
+                        } finally {
+                            signer.close()
+                        }
+                    } finally {
+                        sourceStream.close()
+                        destStream.close()
+                        fileTest.delete()
+                    }
+                } finally {
+                    builder.close()
+                }
+            } catch (e: Exception) {
+                TestResult(
+                    "Builder Intent Edit and Update",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
     suspend fun testBuilderAddAction(): TestResult = withContext(Dispatchers.IO) {
         runTest("Builder Add Action") {
             val manifestJson = TEST_MANIFEST_JSON

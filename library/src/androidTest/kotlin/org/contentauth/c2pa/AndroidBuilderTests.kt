@@ -91,4 +91,46 @@ class AndroidBuilderTests : BuilderTests() {
         val result = testBuilderFromContextWithSettings()
         assertTrue(result.success, "Builder from Context with Settings test failed: ${result.message}")
     }
+
+    @Test
+    fun runTestBuilderFromJsonWithSettings() = runBlocking {
+        val result = testBuilderFromJsonWithSettings()
+        assertTrue(result.success, "Builder fromJson with Settings test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestBuilderWithArchive() = runBlocking {
+        val result = testBuilderWithArchive()
+        assertTrue(result.success, "Builder withArchive test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestReaderFromContext() = runBlocking {
+        val result = testReaderFromContext()
+        assertTrue(result.success, "Reader fromContext test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestBuilderSetIntent() = runBlocking {
+        val result = testBuilderSetIntent()
+        assertTrue(result.success, "Builder Set Intent test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestBuilderAddAction() = runBlocking {
+        val result = testBuilderAddAction()
+        assertTrue(result.success, "Builder Add Action test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestSettingsSetValue() = runBlocking {
+        val result = testSettingsSetValue()
+        assertTrue(result.success, "C2paSettings setValue test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestBuilderIntentEditAndUpdate() = runBlocking {
+        val result = testBuilderIntentEditAndUpdate()
+        assertTrue(result.success, "Builder Intent Edit and Update test failed: ${result.message}")
+    }
 }

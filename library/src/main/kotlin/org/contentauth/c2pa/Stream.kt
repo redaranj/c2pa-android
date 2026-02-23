@@ -36,6 +36,12 @@ typealias StreamFlusher = () -> Int
 /** Abstract base class for C2PA streams */
 abstract class Stream : Closeable {
 
+    companion object {
+        init {
+            loadC2PALibraries()
+        }
+    }
+
     private var nativeHandle: Long = 0
     internal val rawPtr: Long
         get() = nativeHandle
