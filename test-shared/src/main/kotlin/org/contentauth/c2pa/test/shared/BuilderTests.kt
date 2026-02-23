@@ -20,6 +20,8 @@ import org.contentauth.c2pa.BuilderIntent
 import org.contentauth.c2pa.ByteArrayStream
 import org.contentauth.c2pa.C2PA
 import org.contentauth.c2pa.C2PAError
+import org.contentauth.c2pa.C2paContext
+import org.contentauth.c2pa.C2paSettings
 import org.contentauth.c2pa.DigitalSourceType
 import org.contentauth.c2pa.FileStream
 import org.contentauth.c2pa.PredefinedAction
@@ -562,6 +564,89 @@ abstract class BuilderTests : TestBase() {
             } catch (e: Exception) {
                 TestResult(
                     "Builder Set Intent",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testBuilderFromContextWithSettings(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Builder from Context with Settings") {
+            val manifestJson = TEST_MANIFEST_JSON
+
+            try {
+                val settingsJson = """
+                    {
+                        "version": 1,
+                        "builder": {
+                            "created_assertion_labels": ["c2pa.actions"]
+                        }
+                    }
+                """.trimIndent()
+
+                val settings = C2paSettings().apply {
+                    updateFromString(settingsJson, "json")
+                }
+                val context = C2paContext(settings)
+                settings.close()
+
+                val builder = Builder.fromContext(context).withDefinition(manifestJson)
+                context.close()
+
+                try {
+                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                    val sourceStream = ByteArrayStream(sourceImageData)
+                    val fileTest = File.createTempFile("c2pa-context-settings-test", ".jpg")
+                    val destStream = FileStream(fileTest)
+
+                    try {
+                        val certPem = loadResourceAsString("es256_certs")
+                        val keyPem = loadResourceAsString("es256_private")
+                        val signer = Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem))
+
+                        try {
+                            builder.sign("image/jpeg", sourceStream, destStream, signer)
+
+                            val manifest = C2PA.readFile(fileTest.absolutePath)
+                            val json = JSONObject(manifest)
+                            val hasManifests = json.has("manifests")
+                            val hasCreatedAction = manifest.contains("c2pa.created")
+
+                            val success = hasManifests && hasCreatedAction
+
+                            TestResult(
+                                "Builder from Context with Settings",
+                                success,
+                                if (success) {
+                                    "Context-based builder with settings works"
+                                } else {
+                                    "Failed to sign with context-based builder"
+                                },
+                                "Has manifests: $hasManifests, Has created action: $hasCreatedAction\nManifest preview: ${manifest.take(500)}...",
+                            )
+                        } finally {
+                            signer.close()
+                        }
+                    } finally {
+                        sourceStream.close()
+                        destStream.close()
+                        fileTest.delete()
+                    }
+                } finally {
+                    builder.close()
+                }
+            } catch (e: C2PAError) {
+                TestResult(
+                    "Builder from Context with Settings",
+                    false,
+                    "Failed to create builder from context",
+                    e.toString(),
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "Builder from Context with Settings",
                     false,
                     "Exception: ${e.message}",
                     e.toString(),

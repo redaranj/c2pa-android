@@ -85,4 +85,10 @@ class AndroidBuilderTests : BuilderTests() {
         val result = testJsonRoundTrip()
         assertTrue(result.success, "JSON Round-trip test failed: ${result.message}")
     }
+
+    @Test
+    fun runTestBuilderFromContextWithSettings() = runBlocking {
+        val result = testBuilderFromContextWithSettings()
+        assertTrue(result.success, "Builder from Context with Settings test failed: ${result.message}")
+    }
 }
