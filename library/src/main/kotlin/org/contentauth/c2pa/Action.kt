@@ -12,7 +12,8 @@ each license.
 
 package org.contentauth.c2pa
 
-import org.json.JSONObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Represents a C2PA action that describes an operation performed on content.
@@ -72,39 +73,14 @@ data class Action(
         parameters = parameters,
     )
 
-    internal fun toJson(): String {
-        val json = JSONObject()
-        json.put("action", action)
-        digitalSourceType?.let { json.put("digitalSourceType", it) }
-        softwareAgent?.let { json.put("softwareAgent", it) }
+    internal fun toJson(): String = buildJsonObject {
+        put("action", action)
+        digitalSourceType?.let { put("digitalSourceType", it) }
+        softwareAgent?.let { put("softwareAgent", it) }
         parameters?.let { params ->
-            val paramsJson = JSONObject()
-            params.forEach { (key, value) -> paramsJson.put(key, value) }
-            json.put("parameters", paramsJson)
+            put("parameters", buildJsonObject {
+                params.forEach { (key, value) -> put(key, value) }
+            })
         }
-        return json.toString()
-    }
+    }.toString()
 }
-
-private fun DigitalSourceType.toIptcUrl(): String =
-    when (this) {
-        DigitalSourceType.EMPTY -> "http://c2pa.org/digitalsourcetype/empty"
-        DigitalSourceType.TRAINED_ALGORITHMIC_DATA -> "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicData"
-        DigitalSourceType.DIGITAL_CAPTURE -> "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture"
-        DigitalSourceType.COMPUTATIONAL_CAPTURE -> "http://cv.iptc.org/newscodes/digitalsourcetype/computationalCapture"
-        DigitalSourceType.NEGATIVE_FILM -> "http://cv.iptc.org/newscodes/digitalsourcetype/negativeFilm"
-        DigitalSourceType.POSITIVE_FILM -> "http://cv.iptc.org/newscodes/digitalsourcetype/positiveFilm"
-        DigitalSourceType.PRINT -> "http://cv.iptc.org/newscodes/digitalsourcetype/print"
-        DigitalSourceType.HUMAN_EDITS -> "http://cv.iptc.org/newscodes/digitalsourcetype/humanEdits"
-        DigitalSourceType.COMPOSITE_WITH_TRAINED_ALGORITHMIC_MEDIA -> "http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia"
-        DigitalSourceType.ALGORITHMICALLY_ENHANCED -> "http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicallyEnhanced"
-        DigitalSourceType.DIGITAL_CREATION -> "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"
-        DigitalSourceType.DATA_DRIVEN_MEDIA -> "http://cv.iptc.org/newscodes/digitalsourcetype/dataDrivenMedia"
-        DigitalSourceType.TRAINED_ALGORITHMIC_MEDIA -> "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
-        DigitalSourceType.ALGORITHMIC_MEDIA -> "http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicMedia"
-        DigitalSourceType.SCREEN_CAPTURE -> "http://cv.iptc.org/newscodes/digitalsourcetype/screenCapture"
-        DigitalSourceType.VIRTUAL_RECORDING -> "http://cv.iptc.org/newscodes/digitalsourcetype/virtualRecording"
-        DigitalSourceType.COMPOSITE -> "http://cv.iptc.org/newscodes/digitalsourcetype/composite"
-        DigitalSourceType.COMPOSITE_CAPTURE -> "http://cv.iptc.org/newscodes/digitalsourcetype/compositeCapture"
-        DigitalSourceType.COMPOSITE_SYNTHETIC -> "http://cv.iptc.org/newscodes/digitalsourcetype/compositeSynthetic"
-    }

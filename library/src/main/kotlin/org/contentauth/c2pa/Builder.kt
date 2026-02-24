@@ -12,6 +12,7 @@ each license.
 package org.contentauth.c2pa
 
 import java.io.Closeable
+import org.contentauth.c2pa.manifest.ManifestValidator
 
 /**
  * C2PA Builder for creating and signing manifest stores.
@@ -166,8 +167,9 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
         @JvmStatic
         @Throws(C2PAError::class)
         fun fromJson(manifestJSON: String): Builder {
-            if (manifestJSON.isBlank()) {
-                throw C2PAError.Api("Manifest JSON must not be empty")
+            val validation = ManifestValidator.validateJson(manifestJSON, logWarnings = true)
+            if (validation.hasErrors()) {
+                throw C2PAError.Api(validation.errors.joinToString("; "))
             }
 
             val labelsArray = DEFAULT_CREATED_ASSERTION_LABELS.joinToString(", ") { "\"$it\"" }
@@ -265,8 +267,9 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
         @JvmStatic
         @Throws(C2PAError::class)
         fun fromJson(manifestJSON: String, settings: C2PASettings): Builder {
-            if (manifestJSON.isBlank()) {
-                throw C2PAError.Api("Manifest JSON must not be empty")
+            val validation = ManifestValidator.validateJson(manifestJSON, logWarnings = true)
+            if (validation.hasErrors()) {
+                throw C2PAError.Api(validation.errors.joinToString("; "))
             }
 
             val context = C2PAContext.fromSettings(settings)

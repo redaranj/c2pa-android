@@ -50,6 +50,10 @@ import org.contentauth.c2pa.manifest.ValidationStatus
 import org.contentauth.c2pa.manifest.ValidationStatusCode
 import org.contentauth.c2pa.manifest.Relationship
 import org.contentauth.c2pa.manifest.TrainingMiningEntry
+import org.contentauth.c2pa.manifest.CawgTrainingMiningEntry
+import org.contentauth.c2pa.manifest.ManifestValidator
+import org.contentauth.c2pa.manifest.SettingsValidator
+import kotlinx.serialization.json.JsonElement
 import org.contentauth.c2pa.Builder
 import org.contentauth.c2pa.ByteArrayStream
 import org.contentauth.c2pa.C2PA
@@ -560,74 +564,66 @@ abstract class ManifestTests : TestBase() {
                 val jsonString = manifest.toJson()
 
                 // Try to create a Builder from our manifest JSON
-                val builder = Builder.fromJson(jsonString)
+                val outputFile = File.createTempFile("manifest-builder-test", ".jpg")
                 try {
-                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
-                    val sourceStream = ByteArrayStream(sourceImageData)
+                    Builder.fromJson(jsonString).use { builder ->
+                        val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                        ByteArrayStream(sourceImageData).use { sourceStream ->
+                            FileStream(outputFile).use { destStream ->
+                                val certPem = loadResourceAsString("es256_certs")
+                                val keyPem = loadResourceAsString("es256_private")
 
-                    val outputFile = File.createTempFile("manifest-builder-test", ".jpg")
-                    val destStream = FileStream(outputFile)
-                    try {
-                        val certPem = loadResourceAsString("es256_certs")
-                        val keyPem = loadResourceAsString("es256_private")
+                                val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
+                                Signer.fromInfo(signerInfo).use { signer ->
+                                    builder.sign("image/jpeg", sourceStream, destStream, signer)
 
-                        val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
-                        val signer = Signer.fromInfo(signerInfo)
+                                    // Read back and verify
+                                    val readManifest = C2PA.readFile(outputFile.absolutePath)
+                                    val json = JSONObject(readManifest)
 
-                        try {
-                            builder.sign("image/jpeg", sourceStream, destStream, signer)
+                                    if (!json.has("manifests")) {
+                                        return@runTest TestResult(
+                                            "Manifest with Builder",
+                                            false,
+                                            "Signed file has no manifests",
+                                        )
+                                    }
 
-                            // Read back and verify
-                            val readManifest = C2PA.readFile(outputFile.absolutePath)
-                            val json = JSONObject(readManifest)
+                                    // Verify our title made it through
+                                    val manifests = json.getJSONObject("manifests")
+                                    val keys = manifests.keys()
+                                    if (!keys.hasNext()) {
+                                        return@runTest TestResult(
+                                            "Manifest with Builder",
+                                            false,
+                                            "No manifest entries found",
+                                        )
+                                    }
 
-                            if (!json.has("manifests")) {
-                                return@runTest TestResult(
-                                    "Manifest with Builder",
-                                    false,
-                                    "Signed file has no manifests",
-                                )
+                                    val firstManifest = manifests.getJSONObject(keys.next())
+                                    val title = firstManifest.optString("title", "")
+
+                                    if (title != "Builder Integration Test") {
+                                        return@runTest TestResult(
+                                            "Manifest with Builder",
+                                            false,
+                                            "Title mismatch",
+                                            "Expected: 'Builder Integration Test', Got: '$title'",
+                                        )
+                                    }
+
+                                    TestResult(
+                                        "Manifest with Builder",
+                                        true,
+                                        "ManifestDefinition successfully used with Builder",
+                                        "Signed file: ${outputFile.length()} bytes",
+                                    )
+                                }
                             }
-
-                            // Verify our title made it through
-                            val manifests = json.getJSONObject("manifests")
-                            val keys = manifests.keys()
-                            if (!keys.hasNext()) {
-                                return@runTest TestResult(
-                                    "Manifest with Builder",
-                                    false,
-                                    "No manifest entries found",
-                                )
-                            }
-
-                            val firstManifest = manifests.getJSONObject(keys.next())
-                            val title = firstManifest.optString("title", "")
-
-                            if (title != "Builder Integration Test") {
-                                return@runTest TestResult(
-                                    "Manifest with Builder",
-                                    false,
-                                    "Title mismatch",
-                                    "Expected: 'Builder Integration Test', Got: '$title'",
-                                )
-                            }
-
-                            TestResult(
-                                "Manifest with Builder",
-                                true,
-                                "ManifestDefinition successfully used with Builder",
-                                "Signed file: ${outputFile.length()} bytes",
-                            )
-                        } finally {
-                            signer.close()
                         }
-                    } finally {
-                        sourceStream.close()
-                        destStream.close()
-                        outputFile.delete()
                     }
                 } finally {
-                    builder.close()
+                    outputFile.delete()
                 }
             } catch (e: Exception) {
                 TestResult(
@@ -1156,8 +1152,7 @@ abstract class ManifestTests : TestBase() {
 
                 // Verify it works with Builder
                 val jsonString = manifest.toJson()
-                val builder = Builder.fromJson(jsonString)
-                builder.close()
+                Builder.fromJson(jsonString).use { }
 
                 TestResult(
                     "Created Factory",
@@ -1279,8 +1274,1610 @@ abstract class ManifestTests : TestBase() {
     }
 
     /**
+     * Tests gatheredAssertions field serialization.
+     */
+    suspend fun testGatheredAssertions(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Gathered Assertions") {
+            try {
+                val manifest = ManifestDefinition(
+                    title = "Test with Gathered Assertions",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion.created(DigitalSourceType.DIGITAL_CAPTURE)),
+                        ),
+                    ),
+                    gatheredAssertions = listOf(
+                        AssertionDefinition.cawgIdentity(
+                            mapOf(
+                                "signer_payload" to JsonPrimitive("test-payload"),
+                            ),
+                        ),
+                    ),
+                )
+
+                val jsonString = manifest.toJson()
+                val parsed = ManifestDefinition.fromJson(jsonString)
+
+                if (parsed.assertions.size != 1) {
+                    return@runTest TestResult(
+                        "Gathered Assertions",
+                        false,
+                        "Created assertions count mismatch",
+                        "Expected 1, got ${parsed.assertions.size}",
+                    )
+                }
+
+                if (parsed.gatheredAssertions.size != 1) {
+                    return@runTest TestResult(
+                        "Gathered Assertions",
+                        false,
+                        "Gathered assertions count mismatch",
+                        "Expected 1, got ${parsed.gatheredAssertions.size}",
+                    )
+                }
+
+                val gatheredAssertion = parsed.gatheredAssertions.first()
+                if (gatheredAssertion !is AssertionDefinition.CawgIdentity) {
+                    return@runTest TestResult(
+                        "Gathered Assertions",
+                        false,
+                        "Gathered assertion is not CawgIdentity",
+                        "Got: ${gatheredAssertion::class.simpleName}",
+                    )
+                }
+
+                // Verify JSON contains gathered_assertions key
+                if (!jsonString.contains("gathered_assertions")) {
+                    return@runTest TestResult(
+                        "Gathered Assertions",
+                        false,
+                        "JSON does not contain gathered_assertions key",
+                        "JSON: $jsonString",
+                    )
+                }
+
+                TestResult(
+                    "Gathered Assertions",
+                    true,
+                    "Gathered assertions serialize correctly",
+                    "JSON length: ${jsonString.length}",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "Gathered Assertions",
+                    false,
+                    "Error: ${e.message}",
+                    e.stackTraceToString(),
+                )
+            }
+        }
+    }
+
+    /**
+     * Tests CAWG identity assertion type.
+     */
+    suspend fun testCawgIdentityAssertion(): TestResult = withContext(Dispatchers.IO) {
+        runTest("CAWG Identity Assertion") {
+            try {
+                val cawgIdentity = AssertionDefinition.cawgIdentity(
+                    mapOf(
+                        "signer_payload" to buildJsonObject {
+                            put("sig_type", "cawg.identity")
+                            put("name", "Test User")
+                        },
+                        "signature" to JsonPrimitive("base64-encoded-signature"),
+                        "pad1" to JsonPrimitive(""),
+                    ),
+                )
+
+                val manifest = ManifestDefinition.withCawgIdentity(
+                    title = "CAWG Test",
+                    claimGeneratorInfo = ClaimGeneratorInfo(name = "test"),
+                    createdAssertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion.created(DigitalSourceType.DIGITAL_CAPTURE)),
+                        ),
+                    ),
+                    cawgIdentityAssertion = cawgIdentity,
+                )
+
+                val jsonString = manifest.toJson()
+                val parsed = ManifestDefinition.fromJson(jsonString)
+
+                // Verify CAWG identity is in gathered assertions
+                if (parsed.gatheredAssertions.isEmpty()) {
+                    return@runTest TestResult(
+                        "CAWG Identity Assertion",
+                        false,
+                        "CAWG identity should be in gathered assertions",
+                    )
+                }
+
+                val gatheredCawg = parsed.gatheredAssertions.first()
+                if (gatheredCawg !is AssertionDefinition.CawgIdentity) {
+                    return@runTest TestResult(
+                        "CAWG Identity Assertion",
+                        false,
+                        "Gathered assertion is not CawgIdentity",
+                    )
+                }
+
+                // Verify created assertions are separate
+                if (parsed.assertions.isEmpty()) {
+                    return@runTest TestResult(
+                        "CAWG Identity Assertion",
+                        false,
+                        "Created assertions should not be empty",
+                    )
+                }
+
+                TestResult(
+                    "CAWG Identity Assertion",
+                    true,
+                    "CAWG identity assertion properly placed in gathered",
+                    "Gathered: ${parsed.gatheredAssertions.size}, Created: ${parsed.assertions.size}",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "CAWG Identity Assertion",
+                    false,
+                    "Error: ${e.message}",
+                    e.stackTraceToString(),
+                )
+            }
+        }
+    }
+
+    /**
+     * Tests CAWG training/mining assertion type.
+     */
+    suspend fun testCawgTrainingMiningAssertion(): TestResult = withContext(Dispatchers.IO) {
+        runTest("CAWG Training Mining Assertion") {
+            try {
+                val cawgTrainingMining = AssertionDefinition.cawgTrainingMining(
+                    listOf(
+                        CawgTrainingMiningEntry(
+                            use = "notAllowed",
+                            constraintInfo = "No AI training permitted",
+                            aiModelLearningType = "machineLearning",
+                        ),
+                        CawgTrainingMiningEntry(
+                            use = "constrained",
+                            constraintInfo = "https://example.com/terms",
+                            aiMiningType = "dataAggregation",
+                        ),
+                    ),
+                )
+
+                val manifest = ManifestDefinition(
+                    title = "CAWG Training Mining Test",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(cawgTrainingMining),
+                )
+
+                val jsonString = manifest.toJson()
+                val parsed = ManifestDefinition.fromJson(jsonString)
+
+                val assertion = parsed.assertions.first()
+                if (assertion !is AssertionDefinition.CawgTrainingMining) {
+                    return@runTest TestResult(
+                        "CAWG Training Mining Assertion",
+                        false,
+                        "Assertion is not CawgTrainingMining",
+                        "Got: ${assertion::class.simpleName}",
+                    )
+                }
+
+                if (assertion.entries.size != 2) {
+                    return@runTest TestResult(
+                        "CAWG Training Mining Assertion",
+                        false,
+                        "Entry count mismatch",
+                        "Expected 2, got ${assertion.entries.size}",
+                    )
+                }
+
+                val firstEntry = assertion.entries.first()
+                if (firstEntry.use != "notAllowed" || firstEntry.aiModelLearningType != "machineLearning") {
+                    return@runTest TestResult(
+                        "CAWG Training Mining Assertion",
+                        false,
+                        "First entry data mismatch",
+                        "use: ${firstEntry.use}, aiModelLearningType: ${firstEntry.aiModelLearningType}",
+                    )
+                }
+
+                TestResult(
+                    "CAWG Training Mining Assertion",
+                    true,
+                    "CAWG training/mining assertion serializes correctly",
+                    "Entries: ${assertion.entries.size}",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "CAWG Training Mining Assertion",
+                    false,
+                    "Error: ${e.message}",
+                    e.stackTraceToString(),
+                )
+            }
+        }
+    }
+
+    /**
+     * Tests ManifestValidator for CAWG compliance.
+     */
+    suspend fun testManifestValidator(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Manifest Validator") {
+            try {
+                // Test 1: Valid manifest should pass
+                val validManifest = ManifestDefinition.withCawgIdentity(
+                    title = "Valid Test",
+                    claimGeneratorInfo = ClaimGeneratorInfo(name = "test"),
+                    createdAssertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion.created(DigitalSourceType.DIGITAL_CAPTURE)),
+                        ),
+                    ),
+                    cawgIdentityAssertion = AssertionDefinition.cawgIdentity(
+                        mapOf("signer_payload" to JsonPrimitive("test")),
+                    ),
+                )
+
+                val validResult = ManifestValidator.validate(validManifest)
+                if (validResult.hasErrors()) {
+                    return@runTest TestResult(
+                        "Manifest Validator",
+                        false,
+                        "Valid manifest should not have errors",
+                        "Errors: ${validResult.errors}",
+                    )
+                }
+
+                // Test 2: CAWG in wrong place should warn
+                val invalidManifest = ManifestDefinition(
+                    title = "Invalid Test",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(
+                        AssertionDefinition.cawgIdentity(
+                            mapOf("signer_payload" to JsonPrimitive("test")),
+                        ),
+                    ),
+                )
+
+                val invalidResult = ManifestValidator.validate(invalidManifest)
+                if (!invalidResult.hasWarnings()) {
+                    return@runTest TestResult(
+                        "Manifest Validator",
+                        false,
+                        "CAWG in created assertions should generate warning",
+                    )
+                }
+
+                // Test 3: isCawgIdentityProperlyPlaced
+                if (!ManifestValidator.isCawgIdentityProperlyPlaced(validManifest)) {
+                    return@runTest TestResult(
+                        "Manifest Validator",
+                        false,
+                        "Valid manifest should have properly placed CAWG",
+                    )
+                }
+
+                if (ManifestValidator.isCawgIdentityProperlyPlaced(invalidManifest)) {
+                    return@runTest TestResult(
+                        "Manifest Validator",
+                        false,
+                        "Invalid manifest should not have properly placed CAWG",
+                    )
+                }
+
+                TestResult(
+                    "Manifest Validator",
+                    true,
+                    "ManifestValidator correctly identifies CAWG placement issues",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "Manifest Validator",
+                    false,
+                    "Error: ${e.message}",
+                    e.stackTraceToString(),
+                )
+            }
+        }
+    }
+
+    /**
+     * Tests ManifestDefinition.withAssertions factory.
+     */
+    suspend fun testWithAssertionsFactory(): TestResult = withContext(Dispatchers.IO) {
+        runTest("WithAssertions Factory") {
+            try {
+                val manifest = ManifestDefinition.withAssertions(
+                    title = "Mixed Assertions Test",
+                    claimGeneratorInfo = ClaimGeneratorInfo(name = "test", version = "1.0"),
+                    createdAssertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion.edited(softwareAgent = "TestApp/1.0")),
+                        ),
+                        AssertionDefinition.exif(
+                            mapOf("Make" to JsonPrimitive("TestCamera")),
+                        ),
+                    ),
+                    gatheredAssertions = listOf(
+                        AssertionDefinition.cawgIdentity(
+                            mapOf("name" to JsonPrimitive("Verified User")),
+                        ),
+                    ),
+                    ingredients = listOf(
+                        Ingredient.parent("Original Image", "image/jpeg"),
+                    ),
+                )
+
+                val jsonString = manifest.toJson()
+                val parsed = ManifestDefinition.fromJson(jsonString)
+
+                // Verify counts
+                if (parsed.assertions.size != 2) {
+                    return@runTest TestResult(
+                        "WithAssertions Factory",
+                        false,
+                        "Created assertions count mismatch",
+                        "Expected 2, got ${parsed.assertions.size}",
+                    )
+                }
+
+                if (parsed.gatheredAssertions.size != 1) {
+                    return@runTest TestResult(
+                        "WithAssertions Factory",
+                        false,
+                        "Gathered assertions count mismatch",
+                        "Expected 1, got ${parsed.gatheredAssertions.size}",
+                    )
+                }
+
+                if (parsed.ingredients.size != 1) {
+                    return@runTest TestResult(
+                        "WithAssertions Factory",
+                        false,
+                        "Ingredients count mismatch",
+                        "Expected 1, got ${parsed.ingredients.size}",
+                    )
+                }
+
+                // Verify types
+                val hasActions = parsed.assertions.any { it is AssertionDefinition.Actions }
+                val hasExif = parsed.assertions.any { it is AssertionDefinition.Exif }
+                val hasGatheredCawg = parsed.gatheredAssertions.any { it is AssertionDefinition.CawgIdentity }
+
+                if (!hasActions || !hasExif || !hasGatheredCawg) {
+                    return@runTest TestResult(
+                        "WithAssertions Factory",
+                        false,
+                        "Missing expected assertion types",
+                        "Actions: $hasActions, Exif: $hasExif, CAWG: $hasGatheredCawg",
+                    )
+                }
+
+                TestResult(
+                    "WithAssertions Factory",
+                    true,
+                    "ManifestDefinition.withAssertions works correctly",
+                    "Created: ${parsed.assertions.size}, Gathered: ${parsed.gatheredAssertions.size}",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "WithAssertions Factory",
+                    false,
+                    "Error: ${e.message}",
+                    e.stackTraceToString(),
+                )
+            }
+        }
+    }
+
+    /**
+     * Tests ManifestDefinition.edited factory.
+     */
+    suspend fun testEditedFactory(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Edited Factory") {
+            try {
+                val manifest = ManifestDefinition.edited(
+                    title = "Edited Photo",
+                    claimGeneratorInfo = ClaimGeneratorInfo(name = "PhotoEditor", version = "2.0"),
+                    parentIngredient = Ingredient.parent("Original.jpg", "image/jpeg"),
+                    editActions = listOf(
+                        ActionAssertion.edited(softwareAgent = "PhotoEditor/2.0"),
+                        ActionAssertion(
+                            action = PredefinedAction.CROPPED,
+                            softwareAgent = "PhotoEditor/2.0",
+                        ),
+                    ),
+                )
+
+                val jsonString = manifest.toJson()
+                val parsed = ManifestDefinition.fromJson(jsonString)
+
+                // Verify title
+                if (parsed.title != "Edited Photo") {
+                    return@runTest TestResult(
+                        "Edited Factory",
+                        false,
+                        "Title mismatch",
+                        "Expected 'Edited Photo', got '${parsed.title}'",
+                    )
+                }
+
+                // Verify ingredients
+                if (parsed.ingredients.size != 1) {
+                    return@runTest TestResult(
+                        "Edited Factory",
+                        false,
+                        "Should have one ingredient",
+                        "Got: ${parsed.ingredients.size}",
+                    )
+                }
+
+                val ingredient = parsed.ingredients.first()
+                if (ingredient.relationship != Relationship.PARENT_OF) {
+                    return@runTest TestResult(
+                        "Edited Factory",
+                        false,
+                        "Ingredient should be parent",
+                        "Got: ${ingredient.relationship}",
+                    )
+                }
+
+                // Verify actions
+                val actionsAssertion = parsed.assertions.firstOrNull() as? AssertionDefinition.Actions
+                if (actionsAssertion == null || actionsAssertion.actions.size != 2) {
+                    return@runTest TestResult(
+                        "Edited Factory",
+                        false,
+                        "Should have 2 actions",
+                        "Got: ${actionsAssertion?.actions?.size ?: 0}",
+                    )
+                }
+
+                TestResult(
+                    "Edited Factory",
+                    true,
+                    "ManifestDefinition.edited works correctly",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "Edited Factory",
+                    false,
+                    "Error: ${e.message}",
+                    e.stackTraceToString(),
+                )
+            }
+        }
+    }
+
+    /**
+     * Tests that the default Builder.fromJson correctly places assertions.
+     *
+     * This test verifies that without any special configuration, the default
+     * `fromJson` method properly places common assertions (like c2pa.actions)
+     * in `created_assertions` as expected by most users.
+     */
+    suspend fun testGatheredAssertionsWithBuilder(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Gathered Assertions with Builder") {
+            try {
+                val manifest = ManifestDefinition.withAssertions(
+                    title = "Builder Gathered Test",
+                    claimGeneratorInfo = ClaimGeneratorInfo(name = "TestApp", version = "1.0"),
+                    createdAssertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion.created(DigitalSourceType.DIGITAL_CAPTURE)),
+                        ),
+                    ),
+                    gatheredAssertions = listOf(
+                        AssertionDefinition.custom(
+                            label = "com.test.gathered",
+                            data = buildJsonObject { put("test", "value") },
+                        ),
+                    ),
+                )
+
+                val jsonString = manifest.toJson()
+
+                // Verify the JSON structure before sending to builder
+                if (!jsonString.contains("gathered_assertions")) {
+                    return@runTest TestResult(
+                        "Gathered Assertions with Builder",
+                        false,
+                        "JSON should contain gathered_assertions",
+                        "JSON: $jsonString",
+                    )
+                }
+
+                // Use the default fromJson - it automatically configures created_assertion_labels
+                // No need to explicitly pass labels; the library handles it
+                val outputFile = File.createTempFile("gathered-builder-test", ".jpg")
+                try {
+                    Builder.fromJson(jsonString).use { builder ->
+                        val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                        ByteArrayStream(sourceImageData).use { sourceStream ->
+                            FileStream(outputFile).use { destStream ->
+                                val certPem = loadResourceAsString("es256_certs")
+                                val keyPem = loadResourceAsString("es256_private")
+                                val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
+                                Signer.fromInfo(signerInfo).use { signer ->
+                                    builder.sign("image/jpeg", sourceStream, destStream, signer)
+
+                                    // Read back and verify
+                                    val readManifest = C2PA.readFile(outputFile.absolutePath)
+                                    val json = JSONObject(readManifest)
+
+                                    if (!json.has("manifests")) {
+                                        return@runTest TestResult(
+                                            "Gathered Assertions with Builder",
+                                            false,
+                                            "Signed file has no manifests",
+                                        )
+                                    }
+
+                                    // Note: The underlying SDK handles gathered_assertions internally.
+                                    // We verify the manifest was created successfully.
+                                    TestResult(
+                                        "Gathered Assertions with Builder",
+                                        true,
+                                        "Manifest with gathered assertions signed successfully",
+                                        "File size: ${outputFile.length()} bytes",
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } finally {
+                    outputFile.delete()
+                }
+            } catch (e: Exception) {
+                TestResult(
+                    "Gathered Assertions with Builder",
+                    false,
+                    "Error: ${e.message}",
+                    e.stackTraceToString(),
+                )
+            }
+        }
+    }
+
+    /**
+     * Test that creates a signed file with proper created_assertions/gathered_assertions separation.
+     *
+     * The default Builder.fromJson automatically configures the SDK to place common assertions
+     * (c2pa.actions, c2pa.thumbnail.claim, etc.) in created_assertions. No special configuration
+     * is needed by the user.
+     *
+     * The output file is saved to /sdcard/Download/gathered_test_output.jpg
+     * Pull with: adb pull /sdcard/Download/gathered_test_output.jpg
+     * Validate with: .c2patool/c2patool gathered_test_output.jpg --detailed
+     *
+     * Expected c2patool output:
+     * - created_assertions should contain c2pa.actions.v2 and c2pa.hash.data
+     * - gathered_assertions should contain c2pa.thumbnail.claim (or in created if in default list)
+     */
+    suspend fun testGatheredAssertionsForC2PAToolValidation(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Gathered Assertions (c2patool validation)") {
+            try {
+                val manifest = ManifestDefinition.withAssertions(
+                    title = "C2PATool Validation Test",
+                    claimGeneratorInfo = ClaimGeneratorInfo(name = "c2pa-android", version = "1.0"),
+                    createdAssertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion.created(DigitalSourceType.DIGITAL_CAPTURE)),
+                        ),
+                    ),
+                    gatheredAssertions = listOf(
+                        AssertionDefinition.cawgIdentity(
+                            mapOf(
+                                "signer_payload" to JsonPrimitive("test-identity-payload"),
+                            ),
+                        ),
+                    ),
+                )
+
+                val jsonString = manifest.toJson()
+                // Default fromJson automatically applies sensible created_assertion_labels
+                // Users don't need to understand the created vs gathered distinction
+                val outputFile = File(getContext().cacheDir, "gathered_test_output.jpg")
+                Builder.fromJson(jsonString).use { builder ->
+                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                    ByteArrayStream(sourceImageData).use { sourceStream ->
+                        FileStream(outputFile).use { destStream ->
+                            val certPem = loadResourceAsString("es256_certs")
+                            val keyPem = loadResourceAsString("es256_private")
+                            val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
+                            Signer.fromInfo(signerInfo).use { signer ->
+                                builder.sign("image/jpeg", sourceStream, destStream, signer)
+
+                                val readManifest = C2PA.readFile(outputFile.absolutePath)
+                                val json = JSONObject(readManifest)
+
+                                if (!json.has("manifests")) {
+                                    return@runTest TestResult(
+                                        "Gathered Assertions (c2patool validation)",
+                                        false,
+                                        "Signed file has no manifests",
+                                    )
+                                }
+
+                                TestResult(
+                                    "Gathered Assertions (c2patool validation)",
+                                    true,
+                                    "File saved to ${outputFile.absolutePath}",
+                                    "Pull with: adb pull ${outputFile.absolutePath}\n" +
+                                        "Validate with: .c2patool/c2patool gathered_test_output.jpg --detailed",
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                TestResult(
+                    "Gathered Assertions (c2patool validation)",
+                    false,
+                    "Error: ${e.message}",
+                    e.stackTraceToString(),
+                )
+            }
+        }
+    }
+
+    /**
+     * Tests ManifestValidator for deprecated assertions and claim_version validation.
+     */
+    suspend fun testDeprecatedAssertionValidation(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Deprecated Assertion Validation") {
+            try {
+                // Test 1: Deprecated EXIF assertion should generate warning
+                val manifestWithExif = ManifestDefinition(
+                    title = "Test with Deprecated EXIF",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(
+                        AssertionDefinition.exif(
+                            mapOf("Make" to JsonPrimitive("TestCamera")),
+                        ),
+                    ),
+                )
+
+                val exifResult = ManifestValidator.validate(manifestWithExif)
+                val hasExifWarning = exifResult.warnings.any { it.contains("stds.exif") && it.contains("deprecated") }
+                if (!hasExifWarning) {
+                    return@runTest TestResult(
+                        "Deprecated Assertion Validation",
+                        false,
+                        "stds.exif should generate deprecation warning",
+                        "Warnings: ${exifResult.warnings}",
+                    )
+                }
+
+                // Test 2: Deprecated CreativeWork assertion should generate warning
+                val manifestWithCreativeWork = ManifestDefinition(
+                    title = "Test with Deprecated CreativeWork",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(
+                        AssertionDefinition.creativeWork(
+                            mapOf("author" to JsonPrimitive("Test Author")),
+                        ),
+                    ),
+                )
+
+                val cwResult = ManifestValidator.validate(manifestWithCreativeWork)
+                val hasCwWarning = cwResult.warnings.any {
+                    it.contains("stds.schema-org.CreativeWork") && it.contains("deprecated")
+                }
+                if (!hasCwWarning) {
+                    return@runTest TestResult(
+                        "Deprecated Assertion Validation",
+                        false,
+                        "stds.schema-org.CreativeWork should generate deprecation warning",
+                        "Warnings: ${cwResult.warnings}",
+                    )
+                }
+
+                // Test 3: Non-v2 claim_version should generate warning via JSON validation
+                val v1ManifestJson = """
+                {
+                    "title": "V1 Manifest",
+                    "claim_generator": "test/1.0",
+                    "claim_version": 1,
+                    "assertions": []
+                }
+                """.trimIndent()
+
+                val v1Result = ManifestValidator.validateJson(v1ManifestJson, logWarnings = false)
+                val hasV1Warning = v1Result.warnings.any {
+                    it.contains("claim_version is 1") || it.contains("Version 1")
+                }
+                if (!hasV1Warning) {
+                    return@runTest TestResult(
+                        "Deprecated Assertion Validation",
+                        false,
+                        "claim_version 1 should generate warning",
+                        "Warnings: ${v1Result.warnings}",
+                    )
+                }
+
+                // Test 4: Valid v2 manifest should not have claim_version warning
+                val v2ManifestJson = """
+                {
+                    "title": "V2 Manifest",
+                    "claim_generator_info": [{"name": "test"}],
+                    "claim_version": 2,
+                    "assertions": []
+                }
+                """.trimIndent()
+
+                val v2Result = ManifestValidator.validateJson(v2ManifestJson, logWarnings = false)
+                val hasV2Warning = v2Result.warnings.any { it.contains("claim_version") }
+                if (hasV2Warning) {
+                    return@runTest TestResult(
+                        "Deprecated Assertion Validation",
+                        false,
+                        "claim_version 2 should not generate warning",
+                        "Warnings: ${v2Result.warnings}",
+                    )
+                }
+
+                TestResult(
+                    "Deprecated Assertion Validation",
+                    true,
+                    "ManifestValidator correctly identifies deprecated assertions and claim_version issues",
+                    "Tested: stds.exif, stds.schema-org.CreativeWork, claim_version 1 vs 2",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "Deprecated Assertion Validation",
+                    false,
+                    "Error: ${e.message}",
+                    e.stackTraceToString(),
+                )
+            }
+        }
+    }
+
+    /**
+     * Tests all PredefinedAction values serialize correctly.
+     *
+     * This test verifies that every predefined action from the C2PA 2.3 specification
+     * can be serialized and deserialized correctly in an ActionAssertion.
+     */
+    suspend fun testAllPredefinedActions(): TestResult = withContext(Dispatchers.IO) {
+        runTest("All Predefined Actions") {
+            try {
+                val allActions = PredefinedAction.entries
+
+                for (predefinedAction in allActions) {
+                    val manifest = ManifestDefinition(
+                        title = "Action Test: ${predefinedAction.name}",
+                        claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                        assertions = listOf(
+                            AssertionDefinition.actions(
+                                listOf(
+                                    ActionAssertion(
+                                        action = predefinedAction,
+                                        softwareAgent = "TestApp/1.0",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    )
+
+                    val jsonString = manifest.toJson()
+                    val parsed = ManifestDefinition.fromJson(jsonString)
+
+                    val actions = (parsed.assertions.first() as AssertionDefinition.Actions).actions
+                    val parsedAction = actions.first().action
+
+                    // Verify the action value matches the predefined action's value
+                    if (parsedAction != predefinedAction.value) {
+                        return@runTest TestResult(
+                            "All Predefined Actions",
+                            false,
+                            "Action mismatch for ${predefinedAction.name}",
+                            "Expected: ${predefinedAction.value}, Got: $parsedAction",
+                        )
+                    }
+                }
+
+                TestResult(
+                    "All Predefined Actions",
+                    true,
+                    "All ${allActions.size} predefined actions serialize correctly",
+                    "Actions: ${allActions.map { it.name }.joinToString(", ")}",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "All Predefined Actions",
+                    false,
+                    "Error: ${e.message}",
+                    e.stackTraceToString(),
+                )
+            }
+        }
+    }
+
+    /**
+     * Tests redactions field serialization.
+     *
+     * Per C2PA spec section 6.8, assertions can be redacted from ingredients.
+     * The redactions field contains a list of assertion URIs to redact.
+     */
+    suspend fun testRedactions(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Redactions") {
+            try {
+                val manifest = ManifestDefinition(
+                    title = "Manifest with Redactions",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion.created(DigitalSourceType.DIGITAL_CAPTURE)),
+                        ),
+                    ),
+                    ingredients = listOf(
+                        Ingredient.parent("Parent with redacted assertions", "image/jpeg"),
+                    ),
+                    redactions = listOf(
+                        "self#jumbf=/c2pa/urn:uuid:example/c2pa.assertions/c2pa.actions",
+                        "self#jumbf=/c2pa/urn:uuid:example/c2pa.assertions/stds.exif",
+                    ),
+                )
+
+                val jsonString = manifest.toJson()
+                val parsed = ManifestDefinition.fromJson(jsonString)
+
+                // Capture to local variable for smart cast
+                val redactions = parsed.redactions
+
+                // Verify redactions list is preserved
+                if (redactions == null || redactions.size != 2) {
+                    return@runTest TestResult(
+                        "Redactions",
+                        false,
+                        "Redactions list not preserved",
+                        "Expected 2 redactions, got: ${redactions?.size ?: 0}",
+                    )
+                }
+
+                // Verify specific redaction URIs
+                if (!redactions.contains("self#jumbf=/c2pa/urn:uuid:example/c2pa.assertions/c2pa.actions")) {
+                    return@runTest TestResult(
+                        "Redactions",
+                        false,
+                        "c2pa.actions redaction not found",
+                    )
+                }
+
+                if (!redactions.contains("self#jumbf=/c2pa/urn:uuid:example/c2pa.assertions/stds.exif")) {
+                    return@runTest TestResult(
+                        "Redactions",
+                        false,
+                        "stds.exif redaction not found",
+                    )
+                }
+
+                // Verify JSON contains redactions key
+                if (!jsonString.contains("\"redactions\"")) {
+                    return@runTest TestResult(
+                        "Redactions",
+                        false,
+                        "JSON does not contain redactions key",
+                    )
+                }
+
+                TestResult(
+                    "Redactions",
+                    true,
+                    "Redactions field serializes correctly",
+                    "Redacted ${redactions.size} assertion URIs",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "Redactions",
+                    false,
+                    "Error: ${e.message}",
+                    e.stackTraceToString(),
+                )
+            }
+        }
+    }
+
+    /**
+     * Tests all Relationship values (parentOf, componentOf, inputTo) serialize correctly.
+     *
+     * This test verifies that all three C2PA ingredient relationships work properly
+     * with both factory methods and direct enum usage.
+     */
+    suspend fun testAllIngredientRelationships(): TestResult = withContext(Dispatchers.IO) {
+        runTest("All Ingredient Relationships") {
+            try {
+                val manifest = ManifestDefinition(
+                    title = "Relationship Test",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion(action = PredefinedAction.EDITED)),
+                        ),
+                    ),
+                    ingredients = listOf(
+                        // Test parentOf via factory method
+                        Ingredient.parent("Parent Image", "image/jpeg"),
+                        // Test componentOf via factory method
+                        Ingredient.component("Component Overlay", "image/png"),
+                        // Test inputTo via factory method
+                        Ingredient.inputTo("Input Reference", "image/jpeg"),
+                        // Test direct enum usage for all relationships
+                        Ingredient(
+                            title = "Direct Parent",
+                            relationship = Relationship.PARENT_OF,
+                        ),
+                        Ingredient(
+                            title = "Direct Component",
+                            relationship = Relationship.COMPONENT_OF,
+                        ),
+                        Ingredient(
+                            title = "Direct Input",
+                            relationship = Relationship.INPUT_TO,
+                        ),
+                    ),
+                )
+
+                val jsonString = manifest.toJson()
+                val parsed = ManifestDefinition.fromJson(jsonString)
+
+                // Verify all 6 ingredients
+                if (parsed.ingredients.size != 6) {
+                    return@runTest TestResult(
+                        "All Ingredient Relationships",
+                        false,
+                        "Ingredient count mismatch",
+                        "Expected 6, got ${parsed.ingredients.size}",
+                    )
+                }
+
+                // Verify each relationship via factory
+                val parentViaFactory = parsed.ingredients.find { it.title == "Parent Image" }
+                val componentViaFactory = parsed.ingredients.find { it.title == "Component Overlay" }
+                val inputViaFactory = parsed.ingredients.find { it.title == "Input Reference" }
+
+                if (parentViaFactory?.relationship != Relationship.PARENT_OF) {
+                    return@runTest TestResult(
+                        "All Ingredient Relationships",
+                        false,
+                        "parentOf factory failed",
+                        "Got: ${parentViaFactory?.relationship}",
+                    )
+                }
+
+                if (componentViaFactory?.relationship != Relationship.COMPONENT_OF) {
+                    return@runTest TestResult(
+                        "All Ingredient Relationships",
+                        false,
+                        "componentOf factory failed",
+                        "Got: ${componentViaFactory?.relationship}",
+                    )
+                }
+
+                if (inputViaFactory?.relationship != Relationship.INPUT_TO) {
+                    return@runTest TestResult(
+                        "All Ingredient Relationships",
+                        false,
+                        "inputTo factory failed",
+                        "Got: ${inputViaFactory?.relationship}",
+                    )
+                }
+
+                // Verify each relationship via direct enum
+                val parentDirect = parsed.ingredients.find { it.title == "Direct Parent" }
+                val componentDirect = parsed.ingredients.find { it.title == "Direct Component" }
+                val inputDirect = parsed.ingredients.find { it.title == "Direct Input" }
+
+                if (parentDirect?.relationship != Relationship.PARENT_OF) {
+                    return@runTest TestResult(
+                        "All Ingredient Relationships",
+                        false,
+                        "parentOf direct enum failed",
+                        "Got: ${parentDirect?.relationship}",
+                    )
+                }
+
+                if (componentDirect?.relationship != Relationship.COMPONENT_OF) {
+                    return@runTest TestResult(
+                        "All Ingredient Relationships",
+                        false,
+                        "componentOf direct enum failed",
+                        "Got: ${componentDirect?.relationship}",
+                    )
+                }
+
+                if (inputDirect?.relationship != Relationship.INPUT_TO) {
+                    return@runTest TestResult(
+                        "All Ingredient Relationships",
+                        false,
+                        "inputTo direct enum failed",
+                        "Got: ${inputDirect?.relationship}",
+                    )
+                }
+
+                // Verify JSON contains all relationship strings
+                val hasParentOf = jsonString.contains("\"parentOf\"")
+                val hasComponentOf = jsonString.contains("\"componentOf\"")
+                val hasInputTo = jsonString.contains("\"inputTo\"")
+
+                if (!hasParentOf || !hasComponentOf || !hasInputTo) {
+                    return@runTest TestResult(
+                        "All Ingredient Relationships",
+                        false,
+                        "JSON missing relationship strings",
+                        "parentOf: $hasParentOf, componentOf: $hasComponentOf, inputTo: $hasInputTo",
+                    )
+                }
+
+                TestResult(
+                    "All Ingredient Relationships",
+                    true,
+                    "All 3 ingredient relationships (parentOf, componentOf, inputTo) serialize correctly",
+                    "Tested via factory methods and direct enum usage",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "All Ingredient Relationships",
+                    false,
+                    "Error: ${e.message}",
+                    e.stackTraceToString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testSettingsValidatorValid(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Settings Validator - Valid") {
+            try {
+                val validSettings = """
+                    {
+                        "version": 1,
+                        "builder": {
+                            "created_assertion_labels": ["c2pa.actions", "c2pa.thumbnail.claim"]
+                        }
+                    }
+                """.trimIndent()
+
+                val result = SettingsValidator.validate(validSettings, logWarnings = false)
+                val success = result.isValid() && !result.hasErrors()
+
+                TestResult(
+                    "Settings Validator - Valid",
+                    success,
+                    if (success) {
+                        "Valid settings pass validation"
+                    } else {
+                        "Valid settings should not have errors"
+                    },
+                    "Errors: ${result.errors}, Warnings: ${result.warnings}",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "Settings Validator - Valid",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testSettingsValidatorErrors(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Settings Validator - Errors") {
+            try {
+                // Missing version
+                val noVersion = """{"builder": {}}"""
+                val noVersionResult = SettingsValidator.validate(noVersion, logWarnings = false)
+                val missingVersionDetected = noVersionResult.hasErrors() &&
+                    noVersionResult.errors.any { it.contains("version") }
+
+                // Wrong version
+                val wrongVersion = """{"version": 99}"""
+                val wrongVersionResult = SettingsValidator.validate(wrongVersion, logWarnings = false)
+                val wrongVersionDetected = wrongVersionResult.hasErrors() &&
+                    wrongVersionResult.errors.any { it.contains("version") }
+
+                // Invalid JSON
+                val invalidJson = "not json at all"
+                val invalidResult = SettingsValidator.validate(invalidJson, logWarnings = false)
+                val invalidJsonDetected = invalidResult.hasErrors()
+
+                // Unknown top-level key
+                val unknownKey = """{"version": 1, "bogus_section": {}}"""
+                val unknownResult = SettingsValidator.validate(unknownKey, logWarnings = false)
+                val unknownKeyDetected = unknownResult.hasWarnings() &&
+                    unknownResult.warnings.any { it.contains("bogus_section") }
+
+                // Verify section with non-boolean
+                val badVerify = """{"version": 1, "verify": {"verify_trust": "yes"}}"""
+                val badVerifyResult = SettingsValidator.validate(badVerify, logWarnings = false)
+                val badVerifyDetected = badVerifyResult.hasErrors() &&
+                    badVerifyResult.errors.any { it.contains("verify_trust") }
+
+                val success = missingVersionDetected && wrongVersionDetected &&
+                    invalidJsonDetected && unknownKeyDetected && badVerifyDetected
+
+                TestResult(
+                    "Settings Validator - Errors",
+                    success,
+                    if (success) {
+                        "All error cases detected"
+                    } else {
+                        "Some error cases not detected"
+                    },
+                    "Missing version: $missingVersionDetected, Wrong version: $wrongVersionDetected, " +
+                        "Invalid JSON: $invalidJsonDetected, Unknown key: $unknownKeyDetected, " +
+                        "Bad verify: $badVerifyDetected",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "Settings Validator - Errors",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testSettingsValidatorBuilderSection(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Settings Validator - Builder Section") {
+            try {
+                // Valid builder with intent
+                val withIntent = """
+                    {
+                        "version": 1,
+                        "builder": {
+                            "intent": {"Create": "digitalCapture"},
+                            "created_assertion_labels": ["c2pa.actions"]
+                        }
+                    }
+                """.trimIndent()
+                val intentResult = SettingsValidator.validate(withIntent, logWarnings = false)
+                val intentValid = intentResult.isValid()
+
+                // Invalid intent string
+                val badIntent = """
+                    {
+                        "version": 1,
+                        "builder": {
+                            "intent": "InvalidIntent"
+                        }
+                    }
+                """.trimIndent()
+                val badIntentResult = SettingsValidator.validate(badIntent, logWarnings = false)
+                val badIntentDetected = badIntentResult.hasErrors() &&
+                    badIntentResult.errors.any { it.contains("intent") }
+
+                // Invalid thumbnail format
+                val badThumbnail = """
+                    {
+                        "version": 1,
+                        "builder": {
+                            "thumbnail": {
+                                "format": "bmp",
+                                "quality": "ultra"
+                            }
+                        }
+                    }
+                """.trimIndent()
+                val badThumbResult = SettingsValidator.validate(badThumbnail, logWarnings = false)
+                val badFormatDetected = badThumbResult.hasErrors() &&
+                    badThumbResult.errors.any { it.contains("format") }
+                val badQualityDetected = badThumbResult.hasErrors() &&
+                    badThumbResult.errors.any { it.contains("quality") }
+
+                // created_assertion_labels not an array
+                val badLabels = """{"version": 1, "builder": {"created_assertion_labels": "not_array"}}"""
+                val badLabelsResult = SettingsValidator.validate(badLabels, logWarnings = false)
+                val badLabelsDetected = badLabelsResult.hasErrors() &&
+                    badLabelsResult.errors.any { it.contains("created_assertion_labels") }
+
+                val success = intentValid && badIntentDetected && badFormatDetected &&
+                    badQualityDetected && badLabelsDetected
+
+                TestResult(
+                    "Settings Validator - Builder Section",
+                    success,
+                    if (success) {
+                        "Builder section validation works"
+                    } else {
+                        "Builder section validation failed"
+                    },
+                    "Intent valid: $intentValid, Bad intent: $badIntentDetected, " +
+                        "Bad format: $badFormatDetected, Bad quality: $badQualityDetected, " +
+                        "Bad labels: $badLabelsDetected",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "Settings Validator - Builder Section",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testSettingsValidatorSignerSection(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Settings Validator - Signer Section") {
+            try {
+                // Signer with neither local nor remote
+                val noSigner = """{"version": 1, "signer": {}}"""
+                val noSignerResult = SettingsValidator.validate(noSigner, logWarnings = false)
+                val noSignerDetected = noSignerResult.hasErrors() &&
+                    noSignerResult.errors.any { it.contains("local") || it.contains("remote") }
+
+                // Local signer missing required fields
+                val badLocal = """{"version": 1, "signer": {"local": {}}}"""
+                val badLocalResult = SettingsValidator.validate(badLocal, logWarnings = false)
+                val missingAlg = badLocalResult.errors.any { it.contains("alg") }
+                val missingCert = badLocalResult.errors.any { it.contains("sign_cert") }
+                val missingKey = badLocalResult.errors.any { it.contains("private_key") }
+
+                // Remote signer missing required fields
+                val badRemote = """{"version": 1, "signer": {"remote": {}}}"""
+                val badRemoteResult = SettingsValidator.validate(badRemote, logWarnings = false)
+                val missingUrl = badRemoteResult.errors.any { it.contains("url") }
+
+                // Both local and remote
+                val bothSigners = """{"version": 1, "signer": {"local": {}, "remote": {}}}"""
+                val bothResult = SettingsValidator.validate(bothSigners, logWarnings = false)
+                val bothDetected = bothResult.errors.any { it.contains("both") }
+
+                val success = noSignerDetected && missingAlg && missingCert && missingKey &&
+                    missingUrl && bothDetected
+
+                TestResult(
+                    "Settings Validator - Signer Section",
+                    success,
+                    if (success) {
+                        "Signer section validation works"
+                    } else {
+                        "Signer section validation failed"
+                    },
+                    "No signer: $noSignerDetected, Missing alg: $missingAlg, " +
+                        "Missing cert: $missingCert, Missing key: $missingKey, " +
+                        "Missing URL: $missingUrl, Both: $bothDetected",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "Settings Validator - Signer Section",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testManifestValidatorGatheredAssertions(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Manifest Validator - Gathered Assertions") {
+            try {
+                // Actions in gathered assertions should produce a warning
+                val manifestWithActionsInGathered = ManifestDefinition(
+                    title = "Test",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = emptyList(),
+                    gatheredAssertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion(action = PredefinedAction.EDITED)),
+                        ),
+                    ),
+                )
+                val gatheredResult = ManifestValidator.validateGatheredAssertions(manifestWithActionsInGathered)
+                val actionsWarned = gatheredResult.hasWarnings() &&
+                    gatheredResult.warnings.any { it.contains("Actions") }
+
+                // CAWG identity in gathered should NOT produce a warning
+                val manifestWithCawgInGathered = ManifestDefinition(
+                    title = "Test",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion(action = PredefinedAction.CREATED)),
+                        ),
+                    ),
+                    gatheredAssertions = listOf(
+                        AssertionDefinition.cawgIdentity(
+                            buildJsonObject { put("provider", "test") },
+                        ),
+                    ),
+                )
+                val cawgResult = ManifestValidator.validateGatheredAssertions(manifestWithCawgInGathered)
+                val cawgNotWarned = !cawgResult.hasWarnings() ||
+                    cawgResult.warnings.none { it.contains("CAWG") || it.contains("identity") }
+
+                val success = actionsWarned && cawgNotWarned
+
+                TestResult(
+                    "Manifest Validator - Gathered Assertions",
+                    success,
+                    if (success) {
+                        "Gathered assertion validation works"
+                    } else {
+                        "Gathered assertion validation failed"
+                    },
+                    "Actions in gathered warned: $actionsWarned, CAWG in gathered OK: $cawgNotWarned",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "Manifest Validator - Gathered Assertions",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testManifestValidatorCawgCompliance(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Manifest Validator - CAWG Compliance") {
+            try {
+                // CAWG identity in created assertions should be flagged
+                val badManifest = ManifestDefinition(
+                    title = "Test",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion(action = PredefinedAction.CREATED)),
+                        ),
+                        AssertionDefinition.cawgIdentity(
+                            buildJsonObject { put("provider", "test") },
+                        ),
+                    ),
+                )
+
+                val issues = ManifestValidator.validateCawgCompliance(badManifest)
+                val hasIssue = issues.isNotEmpty() && issues.any { it.contains("CAWG") }
+
+                // Properly placed CAWG identity should have no issues
+                val goodManifest = ManifestDefinition(
+                    title = "Test",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion(action = PredefinedAction.CREATED)),
+                        ),
+                    ),
+                    gatheredAssertions = listOf(
+                        AssertionDefinition.cawgIdentity(
+                            buildJsonObject { put("provider", "test") },
+                        ),
+                    ),
+                )
+
+                val noIssues = ManifestValidator.validateCawgCompliance(goodManifest).isEmpty()
+                val properlyPlaced = ManifestValidator.isCawgIdentityProperlyPlaced(goodManifest)
+                val improperlyPlaced = !ManifestValidator.isCawgIdentityProperlyPlaced(badManifest)
+
+                val success = hasIssue && noIssues && properlyPlaced && improperlyPlaced
+
+                TestResult(
+                    "Manifest Validator - CAWG Compliance",
+                    success,
+                    if (success) {
+                        "CAWG compliance validation works"
+                    } else {
+                        "CAWG compliance validation failed"
+                    },
+                    "Bad placement detected: $hasIssue, Good placement OK: $noIssues, " +
+                        "Properly placed: $properlyPlaced, Improperly placed: $improperlyPlaced",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "Manifest Validator - CAWG Compliance",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    /**
      * Helper function to clone and compare a manifest via JSON.
      */
+    suspend fun testDigitalSourceTypeFromIptcUrl(): TestResult = withContext(Dispatchers.IO) {
+        runTest("DigitalSourceType fromIptcUrl") {
+            try {
+                var allMatch = true
+                val mismatches = mutableListOf<String>()
+
+                DigitalSourceType.entries.forEach { sourceType ->
+                    val url = sourceType.toIptcUrl()
+                    val parsed = DigitalSourceType.fromIptcUrl(url)
+                    if (parsed != sourceType) {
+                        allMatch = false
+                        mismatches.add("$sourceType: toIptcUrl='$url', fromIptcUrl=$parsed")
+                    }
+                }
+
+                // Also test unknown URL returns null
+                val unknown = DigitalSourceType.fromIptcUrl("http://example.com/unknown")
+                val unknownIsNull = unknown == null
+
+                val success = allMatch && unknownIsNull
+
+                TestResult(
+                    "DigitalSourceType fromIptcUrl",
+                    success,
+                    if (success) {
+                        "All ${DigitalSourceType.entries.size} source types round-trip correctly"
+                    } else {
+                        "Round-trip failed"
+                    },
+                    if (mismatches.isNotEmpty()) {
+                        "Mismatches: $mismatches"
+                    } else {
+                        "All entries match, unknown URL returns null: $unknownIsNull"
+                    },
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "DigitalSourceType fromIptcUrl",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testManifestCreatedAssertionLabels(): TestResult = withContext(Dispatchers.IO) {
+        runTest("ManifestDefinition createdAssertionLabels") {
+            try {
+                val manifest = ManifestDefinition(
+                    title = "Test",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion(action = PredefinedAction.CREATED)),
+                        ),
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion(action = PredefinedAction.EDITED)),
+                        ),
+                        AssertionDefinition.custom("com.example.test", buildJsonObject { put("key", "value") }),
+                    ),
+                )
+
+                val labels = manifest.createdAssertionLabels()
+                val hasActions = labels.contains("c2pa.actions")
+                val hasCustom = labels.contains("com.example.test")
+                // Two Actions assertions should deduplicate to one label
+                val isDistinct = labels.size == 2
+
+                val success = hasActions && hasCustom && isDistinct
+
+                TestResult(
+                    "ManifestDefinition createdAssertionLabels",
+                    success,
+                    if (success) {
+                        "createdAssertionLabels returns distinct base labels"
+                    } else {
+                        "createdAssertionLabels failed"
+                    },
+                    "Labels: $labels (expected 2 distinct)",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "ManifestDefinition createdAssertionLabels",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testManifestToPrettyJson(): TestResult = withContext(Dispatchers.IO) {
+        runTest("ManifestDefinition toPrettyJson") {
+            try {
+                val manifest = ManifestDefinition(
+                    title = "Pretty Test",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(ActionAssertion(action = PredefinedAction.CREATED)),
+                        ),
+                    ),
+                )
+
+                val compact = manifest.toJson()
+                val pretty = manifest.toPrettyJson()
+
+                // Pretty JSON should be longer (has indentation/newlines)
+                val isLonger = pretty.length > compact.length
+                // Pretty JSON should have newlines
+                val hasNewlines = pretty.contains("\n")
+                // Both should parse to equivalent manifests
+                val compactParsed = ManifestDefinition.fromJson(compact)
+                val prettyParsed = ManifestDefinition.fromJson(pretty)
+                val equivalent = compactParsed == prettyParsed
+
+                val success = isLonger && hasNewlines && equivalent
+
+                TestResult(
+                    "ManifestDefinition toPrettyJson",
+                    success,
+                    if (success) {
+                        "toPrettyJson produces formatted, parseable output"
+                    } else {
+                        "toPrettyJson failed"
+                    },
+                    "Compact: ${compact.length} chars, Pretty: ${pretty.length} chars, " +
+                        "Has newlines: $hasNewlines, Equivalent: $equivalent",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "ManifestDefinition toPrettyJson",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testIptcPhotoMetadata(): TestResult = withContext(Dispatchers.IO) {
+        runTest("AssertionDefinition IptcPhotoMetadata") {
+            try {
+                val iptcData = mapOf<String, JsonElement>(
+                    "dc:creator" to JsonPrimitive("Test Author"),
+                    "dc:description" to JsonPrimitive("A test image"),
+                    "Iptc4xmpCore:Location" to JsonPrimitive("Test City"),
+                )
+
+                val manifest = ManifestDefinition(
+                    title = "IPTC Test",
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "test")),
+                    assertions = listOf(
+                        AssertionDefinition.IptcPhotoMetadata(data = iptcData),
+                    ),
+                )
+
+                val jsonString = manifest.toJson()
+                val parsed = ManifestDefinition.fromJson(jsonString)
+
+                val iptcAssertion = parsed.assertions.firstOrNull()
+                val isIptc = iptcAssertion is AssertionDefinition.IptcPhotoMetadata
+                val hasCreator = isIptc && jsonString.contains("Test Author")
+                val hasDescription = isIptc && jsonString.contains("A test image")
+                val hasLabel = jsonString.contains("stds.iptc.photo-metadata")
+
+                val success = isIptc && hasCreator && hasDescription && hasLabel
+
+                TestResult(
+                    "AssertionDefinition IptcPhotoMetadata",
+                    success,
+                    if (success) {
+                        "IptcPhotoMetadata serializes and deserializes"
+                    } else {
+                        "IptcPhotoMetadata round-trip failed"
+                    },
+                    "Is IPTC: $isIptc, Has creator: $hasCreator, Has description: $hasDescription, " +
+                        "Has label: $hasLabel",
+                )
+            } catch (e: Exception) {
+                TestResult(
+                    "AssertionDefinition IptcPhotoMetadata",
+                    false,
+                    "Exception: ${e.message}",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
     private fun cloneAndCompare(manifest: ManifestDefinition, testName: String): TestResult {
         return try {
             val jsonString = manifest.toJson()

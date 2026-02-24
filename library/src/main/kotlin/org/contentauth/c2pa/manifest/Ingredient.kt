@@ -101,5 +101,23 @@ data class Ingredient(
             format = format,
             relationship = Relationship.COMPONENT_OF,
         )
+
+        /**
+         * Creates an inputTo ingredient with the specified title.
+         *
+         * Use this relationship when an asset is derived from or influenced by another asset,
+         * but the ingredient is not directly embedded or used as a component.
+         *
+         * @param title The title of the input ingredient.
+         * @param format The MIME type of the ingredient.
+         */
+        fun inputTo(
+            title: String,
+            format: String? = null,
+        ) = Ingredient(
+            title = title,
+            format = format,
+            relationship = Relationship.INPUT_TO,
+        )
     }
 }

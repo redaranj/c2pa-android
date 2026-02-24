@@ -9,6 +9,7 @@ ANY KIND, either express or implied. See the LICENSE-MIT and LICENSE-APACHE
 files for the specific language governing permissions and limitations under
 each license.
 */
+
 package org.contentauth.c2pa
 
 import android.content.Context
@@ -150,5 +151,137 @@ class AndroidManifestTests : ManifestTests() {
     fun runTestAllDigitalSourceTypes() = runBlocking {
         val result = testAllDigitalSourceTypes()
         assertTrue(result.success, "All Digital Source Types test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestManifestValidator() = runBlocking {
+        val result = testManifestValidator()
+        assertTrue(result.success, "Manifest Validator test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestWithAssertionsFactory() = runBlocking {
+        val result = testWithAssertionsFactory()
+        assertTrue(result.success, "WithAssertions Factory test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestDeprecatedAssertionValidation() = runBlocking {
+        val result = testDeprecatedAssertionValidation()
+        assertTrue(result.success, "Deprecated Assertion Validation test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestAllPredefinedActions() = runBlocking {
+        val result = testAllPredefinedActions()
+        assertTrue(result.success, "All Predefined Actions test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestAllIngredientRelationships() = runBlocking {
+        val result = testAllIngredientRelationships()
+        assertTrue(result.success, "All Ingredient Relationships test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestRedactions() = runBlocking {
+        val result = testRedactions()
+        assertTrue(result.success, "Redactions test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestGatheredAssertions() = runBlocking {
+        val result = testGatheredAssertions()
+        assertTrue(result.success, "Gathered Assertions test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestCawgIdentityAssertion() = runBlocking {
+        val result = testCawgIdentityAssertion()
+        assertTrue(result.success, "CAWG Identity Assertion test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestCawgTrainingMiningAssertion() = runBlocking {
+        val result = testCawgTrainingMiningAssertion()
+        assertTrue(result.success, "CAWG Training Mining Assertion test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestEditedFactory() = runBlocking {
+        val result = testEditedFactory()
+        assertTrue(result.success, "Edited Factory test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestGatheredAssertionsWithBuilder() = runBlocking {
+        val result = testGatheredAssertionsWithBuilder()
+        assertTrue(result.success, "Gathered Assertions with Builder test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestGatheredAssertionsForC2PAToolValidation() = runBlocking {
+        val result = testGatheredAssertionsForC2PAToolValidation()
+        assertTrue(result.success, "Gathered Assertions C2PA Tool Validation test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestSettingsValidatorValid() = runBlocking {
+        val result = testSettingsValidatorValid()
+        assertTrue(result.success, "Settings Validator Valid test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestSettingsValidatorErrors() = runBlocking {
+        val result = testSettingsValidatorErrors()
+        assertTrue(result.success, "Settings Validator Errors test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestSettingsValidatorBuilderSection() = runBlocking {
+        val result = testSettingsValidatorBuilderSection()
+        assertTrue(result.success, "Settings Validator Builder Section test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestSettingsValidatorSignerSection() = runBlocking {
+        val result = testSettingsValidatorSignerSection()
+        assertTrue(result.success, "Settings Validator Signer Section test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestManifestValidatorGatheredAssertions() = runBlocking {
+        val result = testManifestValidatorGatheredAssertions()
+        assertTrue(result.success, "Manifest Validator Gathered Assertions test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestManifestValidatorCawgCompliance() = runBlocking {
+        val result = testManifestValidatorCawgCompliance()
+        assertTrue(result.success, "Manifest Validator CAWG Compliance test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestDigitalSourceTypeFromIptcUrl() = runBlocking {
+        val result = testDigitalSourceTypeFromIptcUrl()
+        assertTrue(result.success, "DigitalSourceType fromIptcUrl test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestManifestCreatedAssertionLabels() = runBlocking {
+        val result = testManifestCreatedAssertionLabels()
+        assertTrue(result.success, "ManifestDefinition createdAssertionLabels test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestManifestToPrettyJson() = runBlocking {
+        val result = testManifestToPrettyJson()
+        assertTrue(result.success, "ManifestDefinition toPrettyJson test failed: ${result.message}")
+    }
+
+    @Test
+    fun runTestIptcPhotoMetadata() = runBlocking {
+        val result = testIptcPhotoMetadata()
+        assertTrue(result.success, "IptcPhotoMetadata test failed: ${result.message}")
     }
 }
