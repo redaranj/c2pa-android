@@ -1,4 +1,4 @@
-/* 
+/*
 This file is licensed to you under the Apache License, Version 2.0
 (http://www.apache.org/licenses/LICENSE-2.0) or the MIT license
 (http://opensource.org/licenses/MIT), at your option.
@@ -23,12 +23,22 @@ import java.io.File
  */
 abstract class TestBase {
 
+    /** Status of an individual test execution. */
     enum class TestStatus {
         PASSED,
         FAILED,
         SKIPPED,
     }
 
+    /**
+     * Result of a single test execution.
+     *
+     * @property name The test name.
+     * @property success Whether the test passed.
+     * @property message A human-readable summary of the outcome.
+     * @property details Optional additional details (e.g., stack traces, data dumps).
+     * @property status The test status, derived from [success] by default.
+     */
     data class TestResult(
         val name: String,
         val success: Boolean,

@@ -17,45 +17,49 @@ import java.io.Closeable
 /**
  * C2PA Settings for configuring context-based operations.
  *
- * C2paSettings wraps the native C2paSettings struct and provides a fluent API for
- * configuring settings that can be passed to [C2paContext].
+ * C2PASettings wraps the native C2PASettings struct and provides a fluent API for
+ * configuring settings that can be passed to [C2PAContext].
  *
  * ## Usage
  *
  * ```kotlin
- * val settings = C2paSettings()
+ * val settings = C2PASettings.create()
  *     .updateFromString("""{"version": 1, "builder": {"created_assertion_labels": ["c2pa.actions"]}}""", "json")
  *     .setValue("verify.verify_after_sign", "true")
  *
- * val context = C2paContext(settings)
+ * val context = C2PAContext.fromSettings(settings)
  * settings.close() // settings can be closed after creating the context
  * ```
  *
  * ## Resource Management
  *
- * C2paSettings implements [Closeable] and must be closed when done to free native resources.
+ * C2PASettings implements [Closeable] and must be closed when done to free native resources.
  *
- * @property ptr Internal pointer to the native C2paSettings instance
- * @see C2paContext
+ * @property ptr Internal pointer to the native C2PASettings instance
+ * @see C2PAContext
  * @since 1.0.0
  */
-class C2paSettings : Closeable {
-
-    internal var ptr: Long
+class C2PASettings internal constructor(internal var ptr: Long) : Closeable {
 
     companion object {
         init {
             loadC2PALibraries()
         }
 
-        @JvmStatic private external fun nativeNew(): Long
-    }
-
-    init {
-        ptr = nativeNew()
-        if (ptr == 0L) {
-            throw C2PAError.Api(C2PA.getError() ?: "Failed to create C2paSettings")
+        /**
+         * Creates a new settings instance with default values.
+         *
+         * @return A new [C2PASettings] instance
+         * @throws C2PAError.Api if the settings cannot be created
+         */
+        @JvmStatic
+        @Throws(C2PAError::class)
+        fun create(): C2PASettings = executeC2PAOperation("Failed to create C2PASettings") {
+            val handle = nativeNew()
+            if (handle == 0L) null else C2PASettings(handle)
         }
+
+        @JvmStatic private external fun nativeNew(): Long
     }
 
     /**
@@ -67,7 +71,7 @@ class C2paSettings : Closeable {
      * @throws C2PAError.Api if the settings string is invalid
      */
     @Throws(C2PAError::class)
-    fun updateFromString(settingsStr: String, format: String): C2paSettings {
+    fun updateFromString(settingsStr: String, format: String): C2PASettings {
         val result = updateFromStringNative(ptr, settingsStr, format)
         if (result < 0) {
             throw C2PAError.Api(C2PA.getError() ?: "Failed to update settings from string")
@@ -84,7 +88,7 @@ class C2paSettings : Closeable {
      * @throws C2PAError.Api if the path or value is invalid
      */
     @Throws(C2PAError::class)
-    fun setValue(path: String, value: String): C2paSettings {
+    fun setValue(path: String, value: String): C2PASettings {
         val result = setValueNative(ptr, path, value)
         if (result < 0) {
             throw C2PAError.Api(C2PA.getError() ?: "Failed to set settings value")

@@ -95,4 +95,27 @@ enum class StandardAssertionLabel {
     /** CAWG AI training and data mining assertion. */
     @SerialName("cawg.ai_training_and_data_mining")
     CAWG_AI_TRAINING,
+    ;
+
+    /** Returns the serialized label string for this assertion type. */
+    fun serialName(): String = when (this) {
+        ACTIONS -> "c2pa.actions"
+        ACTIONS_V2 -> "c2pa.actions.v2"
+        HASH_DATA -> "c2pa.hash.data"
+        HASH_BOXES -> "c2pa.hash.boxes"
+        HASH_BMFF_V2 -> "c2pa.hash.bmff.v2"
+        HASH_COLLECTION -> "c2pa.hash.collection"
+        SOFT_BINDING -> "c2pa.soft-binding"
+        CLOUD_DATA -> "c2pa.cloud-data"
+        THUMBNAIL_CLAIM -> "c2pa.thumbnail.claim"
+        THUMBNAIL_INGREDIENT -> "c2pa.thumbnail.ingredient"
+        DEPTHMAP -> "c2pa.depthmap"
+        TRAINING_MINING -> "c2pa.training-mining"
+        EXIF -> "stds.exif"
+        CREATIVE_WORK -> "stds.schema-org.CreativeWork"
+        IPTC_PHOTO_METADATA -> "stds.iptc.photo-metadata"
+        ISO_LOCATION -> "stds.iso.location.v1"
+        CAWG_IDENTITY -> "cawg.identity"
+        CAWG_AI_TRAINING -> "cawg.ai_training_and_data_mining"
+    }
 }

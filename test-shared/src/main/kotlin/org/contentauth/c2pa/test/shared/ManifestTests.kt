@@ -564,74 +564,66 @@ abstract class ManifestTests : TestBase() {
                 val jsonString = manifest.toJson()
 
                 // Try to create a Builder from our manifest JSON
-                val builder = Builder.fromJson(jsonString)
+                val outputFile = File.createTempFile("manifest-builder-test", ".jpg")
                 try {
-                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
-                    val sourceStream = ByteArrayStream(sourceImageData)
+                    Builder.fromJson(jsonString).use { builder ->
+                        val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                        ByteArrayStream(sourceImageData).use { sourceStream ->
+                            FileStream(outputFile).use { destStream ->
+                                val certPem = loadResourceAsString("es256_certs")
+                                val keyPem = loadResourceAsString("es256_private")
 
-                    val outputFile = File.createTempFile("manifest-builder-test", ".jpg")
-                    val destStream = FileStream(outputFile)
-                    try {
-                        val certPem = loadResourceAsString("es256_certs")
-                        val keyPem = loadResourceAsString("es256_private")
+                                val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
+                                Signer.fromInfo(signerInfo).use { signer ->
+                                    builder.sign("image/jpeg", sourceStream, destStream, signer)
 
-                        val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
-                        val signer = Signer.fromInfo(signerInfo)
+                                    // Read back and verify
+                                    val readManifest = C2PA.readFile(outputFile.absolutePath)
+                                    val json = JSONObject(readManifest)
 
-                        try {
-                            builder.sign("image/jpeg", sourceStream, destStream, signer)
+                                    if (!json.has("manifests")) {
+                                        return@runTest TestResult(
+                                            "Manifest with Builder",
+                                            false,
+                                            "Signed file has no manifests",
+                                        )
+                                    }
 
-                            // Read back and verify
-                            val readManifest = C2PA.readFile(outputFile.absolutePath)
-                            val json = JSONObject(readManifest)
+                                    // Verify our title made it through
+                                    val manifests = json.getJSONObject("manifests")
+                                    val keys = manifests.keys()
+                                    if (!keys.hasNext()) {
+                                        return@runTest TestResult(
+                                            "Manifest with Builder",
+                                            false,
+                                            "No manifest entries found",
+                                        )
+                                    }
 
-                            if (!json.has("manifests")) {
-                                return@runTest TestResult(
-                                    "Manifest with Builder",
-                                    false,
-                                    "Signed file has no manifests",
-                                )
+                                    val firstManifest = manifests.getJSONObject(keys.next())
+                                    val title = firstManifest.optString("title", "")
+
+                                    if (title != "Builder Integration Test") {
+                                        return@runTest TestResult(
+                                            "Manifest with Builder",
+                                            false,
+                                            "Title mismatch",
+                                            "Expected: 'Builder Integration Test', Got: '$title'",
+                                        )
+                                    }
+
+                                    TestResult(
+                                        "Manifest with Builder",
+                                        true,
+                                        "ManifestDefinition successfully used with Builder",
+                                        "Signed file: ${outputFile.length()} bytes",
+                                    )
+                                }
                             }
-
-                            // Verify our title made it through
-                            val manifests = json.getJSONObject("manifests")
-                            val keys = manifests.keys()
-                            if (!keys.hasNext()) {
-                                return@runTest TestResult(
-                                    "Manifest with Builder",
-                                    false,
-                                    "No manifest entries found",
-                                )
-                            }
-
-                            val firstManifest = manifests.getJSONObject(keys.next())
-                            val title = firstManifest.optString("title", "")
-
-                            if (title != "Builder Integration Test") {
-                                return@runTest TestResult(
-                                    "Manifest with Builder",
-                                    false,
-                                    "Title mismatch",
-                                    "Expected: 'Builder Integration Test', Got: '$title'",
-                                )
-                            }
-
-                            TestResult(
-                                "Manifest with Builder",
-                                true,
-                                "ManifestDefinition successfully used with Builder",
-                                "Signed file: ${outputFile.length()} bytes",
-                            )
-                        } finally {
-                            signer.close()
                         }
-                    } finally {
-                        sourceStream.close()
-                        destStream.close()
-                        outputFile.delete()
                     }
                 } finally {
-                    builder.close()
+                    outputFile.delete()
                 }
             } catch (e: Exception) {
                 TestResult(
@@ -1160,8 +1152,7 @@ abstract class ManifestTests : TestBase() {
 
                 // Verify it works with Builder
                 val jsonString = manifest.toJson()
-                val builder = Builder.fromJson(jsonString)
-                builder.close()
+                Builder.fromJson(jsonString).use { }
 
                 TestResult(
                     "Created Factory",
@@ -1805,52 +1796,44 @@ abstract class ManifestTests : TestBase() {
 
                 // Use the default fromJson - it automatically configures created_assertion_labels
                 // No need to explicitly pass labels; the library handles it
-                val builder = Builder.fromJson(jsonString)
+                val outputFile = File.createTempFile("gathered-builder-test", ".jpg")
                 try {
-                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
-                    val sourceStream = ByteArrayStream(sourceImageData)
-                    val outputFile = File.createTempFile("gathered-builder-test", ".jpg")
-                    val destStream = FileStream(outputFile)
+                    Builder.fromJson(jsonString).use { builder ->
+                        val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                        ByteArrayStream(sourceImageData).use { sourceStream ->
+                            FileStream(outputFile).use { destStream ->
+                                val certPem = loadResourceAsString("es256_certs")
+                                val keyPem = loadResourceAsString("es256_private")
+                                val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
+                                Signer.fromInfo(signerInfo).use { signer ->
+                                    builder.sign("image/jpeg", sourceStream, destStream, signer)
 
-                    try {
-                        val certPem = loadResourceAsString("es256_certs")
-                        val keyPem = loadResourceAsString("es256_private")
-                        val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
-                        val signer = Signer.fromInfo(signerInfo)
+                                    // Read back and verify
+                                    val readManifest = C2PA.readFile(outputFile.absolutePath)
+                                    val json = JSONObject(readManifest)
 
-                        try {
-                            builder.sign("image/jpeg", sourceStream, destStream, signer)
+                                    if (!json.has("manifests")) {
+                                        return@runTest TestResult(
+                                            "Gathered Assertions with Builder",
+                                            false,
+                                            "Signed file has no manifests",
+                                        )
+                                    }
 
-                            // Read back and verify
-                            val readManifest = C2PA.readFile(outputFile.absolutePath)
-                            val json = JSONObject(readManifest)
-
-                            if (!json.has("manifests")) {
-                                return@runTest TestResult(
-                                    "Gathered Assertions with Builder",
-                                    false,
-                                    "Signed file has no manifests",
-                                )
+                                    // Note: The underlying SDK handles gathered_assertions internally.
+                                    // We verify the manifest was created successfully.
+                                    TestResult(
+                                        "Gathered Assertions with Builder",
+                                        true,
+                                        "Manifest with gathered assertions signed successfully",
+                                        "File size: ${outputFile.length()} bytes",
+                                    )
+                                }
                             }
-
-                            // Note: The underlying SDK handles gathered_assertions internally.
-                            // We verify the manifest was created successfully.
-                            TestResult(
-                                "Gathered Assertions with Builder",
-                                true,
-                                "Manifest with gathered assertions signed successfully",
-                                "File size: ${outputFile.length()} bytes",
-                            )
-                        } finally {
-                            signer.close()
                         }
-                    } finally {
-                        sourceStream.close()
-                        destStream.close()
-                        outputFile.delete()
                     }
                 } finally {
-                    builder.close()
+                    outputFile.delete()
                 }
             } catch (e: Exception) {
                 TestResult(
@@ -1901,50 +1884,38 @@ abstract class ManifestTests : TestBase() {
                 val jsonString = manifest.toJson()
                 // Default fromJson automatically applies sensible created_assertion_labels
                 // Users don't need to understand the created vs gathered distinction
-                val builder = Builder.fromJson(jsonString)
-                try {
+                val outputFile = File(getContext().cacheDir, "gathered_test_output.jpg")
+                Builder.fromJson(jsonString).use { builder ->
                     val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
-                    val sourceStream = ByteArrayStream(sourceImageData)
-                    val outputFile = File(getContext().cacheDir, "gathered_test_output.jpg")
-                    val destStream = FileStream(outputFile)
+                    ByteArrayStream(sourceImageData).use { sourceStream ->
+                        FileStream(outputFile).use { destStream ->
+                            val certPem = loadResourceAsString("es256_certs")
+                            val keyPem = loadResourceAsString("es256_private")
+                            val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
+                            Signer.fromInfo(signerInfo).use { signer ->
+                                builder.sign("image/jpeg", sourceStream, destStream, signer)
 
-                    try {
-                        val certPem = loadResourceAsString("es256_certs")
-                        val keyPem = loadResourceAsString("es256_private")
-                        val signerInfo = SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)
-                        val signer = Signer.fromInfo(signerInfo)
+                                val readManifest = C2PA.readFile(outputFile.absolutePath)
+                                val json = JSONObject(readManifest)
 
-                        try {
-                            builder.sign("image/jpeg", sourceStream, destStream, signer)
+                                if (!json.has("manifests")) {
+                                    return@runTest TestResult(
+                                        "Gathered Assertions (c2patool validation)",
+                                        false,
+                                        "Signed file has no manifests",
+                                    )
+                                }
 
-                            val readManifest = C2PA.readFile(outputFile.absolutePath)
-                            val json = JSONObject(readManifest)
-
-                            if (!json.has("manifests")) {
-                                return@runTest TestResult(
+                                TestResult(
                                     "Gathered Assertions (c2patool validation)",
-                                    false,
-                                    "Signed file has no manifests",
+                                    true,
+                                    "File saved to ${outputFile.absolutePath}",
+                                    "Pull with: adb pull ${outputFile.absolutePath}\n" +
+                                        "Validate with: .c2patool/c2patool gathered_test_output.jpg --detailed",
                                 )
                             }
-
-                            TestResult(
-                                "Gathered Assertions (c2patool validation)",
-                                true,
-                                "File saved to ${outputFile.absolutePath}",
-                                "Pull with: adb pull ${outputFile.absolutePath}\n" +
-                                    "Validate with: .c2patool/c2patool gathered_test_output.jpg --detailed",
-                            )
-                        } finally {
-                            signer.close()
                         }
-                    } finally {
-                        sourceStream.close()
-                        destStream.close()
-                        // Don't delete - we want to keep the file for c2patool validation
                     }
-                } finally {
-                    builder.close()
                 }
             } catch (e: Exception) {
                 TestResult(

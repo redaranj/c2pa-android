@@ -1,4 +1,4 @@
-/* 
+/*
 This file is licensed to you under the Apache License, Version 2.0
 (http://www.apache.org/licenses/LICENSE-2.0) or the MIT license
 (http://opensource.org/licenses/MIT), at your option.
@@ -101,7 +101,9 @@ class DataStream(private val data: ByteArray) : Stream() {
 
     override fun write(data: ByteArray, length: Long): Long =
         throw UnsupportedOperationException("DataStream is read-only")
-    override fun flush(): Long = 0L
+
+    override fun flush(): Long =
+        throw UnsupportedOperationException("DataStream is read-only")
 }
 
 /**

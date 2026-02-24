@@ -343,24 +343,3 @@ internal object AssertionDefinitionSerializer : KSerializer<AssertionDefinition>
         }
     }
 }
-
-private fun StandardAssertionLabel.serialName(): String = when (this) {
-    StandardAssertionLabel.ACTIONS -> "c2pa.actions"
-    StandardAssertionLabel.ACTIONS_V2 -> "c2pa.actions.v2"
-    StandardAssertionLabel.HASH_DATA -> "c2pa.hash.data"
-    StandardAssertionLabel.HASH_BOXES -> "c2pa.hash.boxes"
-    StandardAssertionLabel.HASH_BMFF_V2 -> "c2pa.hash.bmff.v2"
-    StandardAssertionLabel.HASH_COLLECTION -> "c2pa.hash.collection"
-    StandardAssertionLabel.SOFT_BINDING -> "c2pa.soft-binding"
-    StandardAssertionLabel.CLOUD_DATA -> "c2pa.cloud-data"
-    StandardAssertionLabel.THUMBNAIL_CLAIM -> "c2pa.thumbnail.claim"
-    StandardAssertionLabel.THUMBNAIL_INGREDIENT -> "c2pa.thumbnail.ingredient"
-    StandardAssertionLabel.DEPTHMAP -> "c2pa.depthmap"
-    StandardAssertionLabel.TRAINING_MINING -> "c2pa.training-mining"
-    StandardAssertionLabel.EXIF -> "stds.exif"
-    StandardAssertionLabel.CREATIVE_WORK -> "stds.schema-org.CreativeWork"
-    StandardAssertionLabel.IPTC_PHOTO_METADATA -> "stds.iptc.photo-metadata"
-    StandardAssertionLabel.ISO_LOCATION -> "stds.iso.location.v1"
-    StandardAssertionLabel.CAWG_IDENTITY -> "cawg.identity"
-    StandardAssertionLabel.CAWG_AI_TRAINING -> "cawg.ai_training_and_data_mining"
-}

@@ -22,6 +22,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.contentauth.c2pa.C2PAJson
+import org.contentauth.c2pa.SigningAlgorithm
 
 /**
  * Validates C2PA settings JSON/TOML for schema compliance and provides warnings for common issues.
@@ -52,13 +53,9 @@ object SettingsValidator {
     const val SUPPORTED_VERSION = 1
 
     /**
-     * Valid signing algorithms for C2PA.
+     * Valid signing algorithms for C2PA, derived from [SigningAlgorithm] enum values.
      */
-    val VALID_ALGORITHMS: Set<String> = setOf(
-        "ps256", "ps384", "ps512",
-        "es256", "es384", "es512",
-        "ed25519",
-    )
+    val VALID_ALGORITHMS: Set<String> = SigningAlgorithm.entries.map { it.description }.toSet()
 
     /**
      * Valid thumbnail formats.
@@ -112,26 +109,6 @@ object SettingsValidator {
         "signer",
         "cawg_x509_signer",
     )
-
-    /**
-     * Result of settings validation containing errors and warnings.
-     *
-     * @property errors Critical issues that violate schema requirements.
-     * @property warnings Non-critical issues that may indicate misconfiguration.
-     */
-    data class ValidationResult(
-        val errors: List<String> = emptyList(),
-        val warnings: List<String> = emptyList(),
-    ) {
-        /** Returns true if there are any errors. */
-        fun hasErrors(): Boolean = errors.isNotEmpty()
-
-        /** Returns true if there are any warnings. */
-        fun hasWarnings(): Boolean = warnings.isNotEmpty()
-
-        /** Returns true if validation passed without errors. */
-        fun isValid(): Boolean = !hasErrors()
-    }
 
     /**
      * Validates a settings JSON string.

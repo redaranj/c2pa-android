@@ -60,26 +60,6 @@ object ManifestValidator {
     const val RECOMMENDED_CLAIM_VERSION = 2
 
     /**
-     * Result of manifest validation containing errors and warnings.
-     *
-     * @property errors Critical issues that violate spec requirements.
-     * @property warnings Non-critical issues that may indicate misuse.
-     */
-    data class ValidationResult(
-        val errors: List<String> = emptyList(),
-        val warnings: List<String> = emptyList(),
-    ) {
-        /** Returns true if there are any errors. */
-        fun hasErrors(): Boolean = errors.isNotEmpty()
-
-        /** Returns true if there are any warnings. */
-        fun hasWarnings(): Boolean = warnings.isNotEmpty()
-
-        /** Returns true if validation passed without errors. */
-        fun isValid(): Boolean = !hasErrors()
-    }
-
-    /**
      * Validates a manifest definition for C2PA 2.3 spec compliance.
      *
      * @param manifest The manifest to validate.

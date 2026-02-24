@@ -103,7 +103,7 @@ class Reader internal constructor(private var ptr: Long) : Closeable {
             }
 
         /**
-         * Creates a reader from a shared [C2paContext].
+         * Creates a reader from a shared [C2PAContext].
          *
          * The context can be reused to create multiple readers and builders.
          * The reader will inherit the context's settings. Use [withStream] or
@@ -115,19 +115,19 @@ class Reader internal constructor(private var ptr: Long) : Closeable {
          *
          * @sample
          * ```kotlin
-         * val context = C2paContext()
+         * val context = C2PAContext.create()
          * val reader = Reader.fromContext(context)
          *     .withStream("image/jpeg", stream)
          * val json = reader.json()
          * ```
          *
-         * @see C2paContext
+         * @see C2PAContext
          * @see withStream
          * @see withFragment
          */
         @JvmStatic
         @Throws(C2PAError::class)
-        fun fromContext(context: C2paContext): Reader =
+        fun fromContext(context: C2PAContext): Reader =
             executeC2PAOperation("Failed to create reader from context") {
                 val handle = nativeFromContext(context.ptr)
                 if (handle == 0L) null else Reader(handle)

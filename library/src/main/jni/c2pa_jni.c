@@ -1193,8 +1193,8 @@ JNIEXPORT void JNICALL Java_org_contentauth_c2pa_Signer_free(JNIEnv *env, jobjec
     }
 }
 
-// C2paSettings native methods
-JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2paSettings_nativeNew(JNIEnv *env, jclass clazz) {
+// C2PASettings native methods
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PASettings_nativeNew(JNIEnv *env, jclass clazz) {
     struct C2paSettings *settings = c2pa_settings_new();
     if (settings == NULL) {
         return 0;
@@ -1202,7 +1202,7 @@ JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2paSettings_nativeNew(JNIEnv 
     return (jlong)(uintptr_t)settings;
 }
 
-JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2paSettings_updateFromStringNative(JNIEnv *env, jobject obj, jlong settingsPtr, jstring settingsStr, jstring format) {
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2PASettings_updateFromStringNative(JNIEnv *env, jobject obj, jlong settingsPtr, jstring settingsStr, jstring format) {
     if (settingsPtr == 0 || settingsStr == NULL || format == NULL) {
         return -1;
     }
@@ -1225,7 +1225,7 @@ JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2paSettings_updateFromStringNa
     return result;
 }
 
-JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2paSettings_setValueNative(JNIEnv *env, jobject obj, jlong settingsPtr, jstring path, jstring value) {
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2PASettings_setValueNative(JNIEnv *env, jobject obj, jlong settingsPtr, jstring path, jstring value) {
     if (settingsPtr == 0 || path == NULL || value == NULL) {
         return -1;
     }
@@ -1248,14 +1248,14 @@ JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2paSettings_setValueNative(JNI
     return result;
 }
 
-JNIEXPORT void JNICALL Java_org_contentauth_c2pa_C2paSettings_free(JNIEnv *env, jobject obj, jlong settingsPtr) {
+JNIEXPORT void JNICALL Java_org_contentauth_c2pa_C2PASettings_free(JNIEnv *env, jobject obj, jlong settingsPtr) {
     if (settingsPtr != 0) {
         c2pa_free((const void*)(uintptr_t)settingsPtr);
     }
 }
 
-// C2paContext native methods
-JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2paContext_nativeNew(JNIEnv *env, jclass clazz) {
+// C2PAContext native methods
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PAContext_nativeNew(JNIEnv *env, jclass clazz) {
     struct C2paContext *context = c2pa_context_new();
     if (context == NULL) {
         return 0;
@@ -1263,7 +1263,7 @@ JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2paContext_nativeNew(JNIEnv *
     return (jlong)(uintptr_t)context;
 }
 
-JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2paContext_nativeNewWithSettings(JNIEnv *env, jclass clazz, jlong settingsPtr) {
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PAContext_nativeNewWithSettings(JNIEnv *env, jclass clazz, jlong settingsPtr) {
     if (settingsPtr == 0) {
         return 0;
     }
@@ -1289,7 +1289,7 @@ JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2paContext_nativeNewWithSetti
     return (jlong)(uintptr_t)context;
 }
 
-JNIEXPORT void JNICALL Java_org_contentauth_c2pa_C2paContext_free(JNIEnv *env, jobject obj, jlong contextPtr) {
+JNIEXPORT void JNICALL Java_org_contentauth_c2pa_C2PAContext_free(JNIEnv *env, jobject obj, jlong contextPtr) {
     if (contextPtr != 0) {
         c2pa_free((const void*)(uintptr_t)contextPtr);
     }

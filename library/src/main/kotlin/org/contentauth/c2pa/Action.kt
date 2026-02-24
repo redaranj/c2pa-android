@@ -12,7 +12,8 @@ each license.
 
 package org.contentauth.c2pa
 
-import org.json.JSONObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Represents a C2PA action that describes an operation performed on content.
@@ -72,16 +73,14 @@ data class Action(
         parameters = parameters,
     )
 
-    internal fun toJson(): String {
-        val json = JSONObject()
-        json.put("action", action)
-        digitalSourceType?.let { json.put("digitalSourceType", it) }
-        softwareAgent?.let { json.put("softwareAgent", it) }
+    internal fun toJson(): String = buildJsonObject {
+        put("action", action)
+        digitalSourceType?.let { put("digitalSourceType", it) }
+        softwareAgent?.let { put("softwareAgent", it) }
         parameters?.let { params ->
-            val paramsJson = JSONObject()
-            params.forEach { (key, value) -> paramsJson.put(key, value) }
-            json.put("parameters", paramsJson)
+            put("parameters", buildJsonObject {
+                params.forEach { (key, value) -> put(key, value) }
+            })
         }
-        return json.toString()
-    }
+    }.toString()
 }
