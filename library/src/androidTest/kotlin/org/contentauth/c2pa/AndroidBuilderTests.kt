@@ -70,6 +70,12 @@ class AndroidBuilderTests : BuilderTests() {
     }
 
     @Test
+    fun runTestBuilderHashType() = runBlocking {
+        val result = testBuilderHashType()
+        assertTrue(result.success, "Builder Hash Type test failed: ${result.message}")
+    }
+
+    @Test
     fun runTestBuilderFromArchive() = runBlocking {
         val result = testBuilderFromArchive()
         assertTrue(result.success, "Builder from Archive test failed: ${result.message}")

@@ -550,6 +550,81 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
         return result
     }
 
+    /**
+     * Enables fixed-size Merkle-tree hashing for fragmented (BMFF) assets.
+     *
+     * Produces a Merkle tree per `mdat` with fixed-size leaves, for efficient hashing of large
+     * assets. Requires that a placeholder has been created on the builder first.
+     *
+     * @param fixedSizeKb Fixed leaf block size, in KB
+     * @return This builder for fluent chaining
+     * @throws C2PAError.Api if the setting cannot be applied
+     */
+    @Throws(C2PAError::class)
+    fun setFixedSizeMerkle(fixedSizeKb: Long): Builder {
+        val result = setFixedSizeMerkleNative(ptr, fixedSizeKb)
+        if (result < 0) {
+            throw C2PAError.Api(C2PA.getError() ?: "Failed to set fixed size merkle")
+        }
+        return this
+    }
+
+    /**
+     * Generates `mdat` leaf hashes for a chunk of fragmented-media data.
+     *
+     * Supply chunks in the order they are written to the `mdat`. `mdatId` starts at 0 and
+     * increments for each `mdat` in the asset.
+     *
+     * @param mdatId The mdat index (0-based)
+     * @param data The mdat chunk bytes
+     * @param largeSize Whether the mdat uses 64-bit (large) box sizing
+     * @return This builder for fluent chaining
+     * @throws C2PAError.Api if hashing fails
+     */
+    @Throws(C2PAError::class)
+    fun hashMdatBytes(mdatId: Long, data: ByteArray, largeSize: Boolean): Builder {
+        val result = hashMdatBytesNative(ptr, mdatId, data, largeSize)
+        if (result < 0) {
+            throw C2PAError.Api(C2PA.getError() ?: "Failed to hash mdat bytes")
+        }
+        return this
+    }
+
+    /**
+     * Updates the builder's hash by reading the asset from a stream.
+     *
+     * For DataHash workflows, register data-hash exclusions before calling this.
+     *
+     * @param format The MIME type of the asset (e.g. "video/mp4")
+     * @param stream The asset stream to hash
+     * @return This builder for fluent chaining
+     * @throws C2PAError.Api if hashing fails
+     */
+    @Throws(C2PAError::class)
+    fun updateHashFromStream(format: String, stream: Stream): Builder {
+        val result = updateHashFromStreamNative(ptr, format, stream.rawPtr)
+        if (result < 0) {
+            throw C2PAError.Api(C2PA.getError() ?: "Failed to update hash from stream")
+        }
+        return this
+    }
+
+    /**
+     * Returns the hash binding type the builder will use for the given format.
+     *
+     * @param format The MIME type of the asset (e.g. "image/jpeg", "video/mp4")
+     * @return The [HashType] for the format
+     * @throws C2PAError.Api if the type cannot be determined
+     */
+    @Throws(C2PAError::class)
+    fun hashType(format: String): HashType {
+        val result = hashTypeNative(ptr, format)
+        if (result < 0) {
+            throw C2PAError.Api(C2PA.getError() ?: "Failed to determine hash type")
+        }
+        return HashType.fromValue(result)
+    }
+
     override fun close() {
         if (ptr != 0L) {
             free(ptr)
@@ -587,4 +662,8 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
         format: String,
         assetHandle: Long,
     ): ByteArray?
+    private external fun setFixedSizeMerkleNative(handle: Long, fixedSizeKb: Long): Int
+    private external fun hashMdatBytesNative(handle: Long, mdatId: Long, data: ByteArray, largeSize: Boolean): Int
+    private external fun updateHashFromStreamNative(handle: Long, format: String, streamHandle: Long): Int
+    private external fun hashTypeNative(handle: Long, format: String): Int
 }

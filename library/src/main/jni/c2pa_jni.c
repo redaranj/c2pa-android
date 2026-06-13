@@ -992,8 +992,87 @@ JNIEXPORT jbyteArray JNICALL Java_org_contentauth_c2pa_Builder_signDataHashedEmb
     jbyteArray result = (*env)->NewByteArray(env, size);
     (*env)->SetByteArrayRegion(env, result, 0, size, (const jbyte*)manifestBytes);
     c2pa_free(manifestBytes);
-    
+
     return result;
+}
+
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_setFixedSizeMerkleNative(JNIEnv *env, jobject obj, jlong builderPtr, jlong fixedSizeKb) {
+    if (builderPtr == 0) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder cannot be null");
+        return -1;
+    }
+    return c2pa_builder_set_fixed_size_merkle((struct C2paBuilder*)(uintptr_t)builderPtr, (uintptr_t)fixedSizeKb);
+}
+
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_hashMdatBytesNative(JNIEnv *env, jobject obj, jlong builderPtr, jlong mdatId, jbyteArray data, jboolean largeSize) {
+    if (builderPtr == 0 || data == NULL) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder and data cannot be null");
+        return -1;
+    }
+
+    jsize dataLen = (*env)->GetArrayLength(env, data);
+    jbyte *dataPtr = (*env)->GetByteArrayElements(env, data, NULL);
+    if (dataPtr == NULL) {
+        check_exception(env);
+        return -1;
+    }
+
+    int result = c2pa_builder_hash_mdat_bytes(
+        (struct C2paBuilder*)(uintptr_t)builderPtr,
+        (uintptr_t)mdatId,
+        (const unsigned char*)dataPtr,
+        (uintptr_t)dataLen,
+        largeSize == JNI_TRUE
+    );
+
+    (*env)->ReleaseByteArrayElements(env, data, dataPtr, JNI_ABORT);
+    return result;
+}
+
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_updateHashFromStreamNative(JNIEnv *env, jobject obj, jlong builderPtr, jstring format, jlong streamPtr) {
+    if (builderPtr == 0 || format == NULL || streamPtr == 0) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder, format, and stream cannot be null");
+        return -1;
+    }
+
+    const char *cformat = jstring_to_cstring(env, format);
+    if (cformat == NULL) {
+        return -1;
+    }
+
+    int result = c2pa_builder_update_hash_from_stream(
+        (struct C2paBuilder*)(uintptr_t)builderPtr,
+        cformat,
+        (struct C2paStream*)(uintptr_t)streamPtr
+    );
+
+    release_cstring(env, format, cformat);
+    return result;
+}
+
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_hashTypeNative(JNIEnv *env, jobject obj, jlong builderPtr, jstring format) {
+    if (builderPtr == 0 || format == NULL) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder and format cannot be null");
+        return -1;
+    }
+
+    const char *cformat = jstring_to_cstring(env, format);
+    if (cformat == NULL) {
+        return -1;
+    }
+
+    enum C2paHashType hashType;
+    int result = c2pa_builder_hash_type((struct C2paBuilder*)(uintptr_t)builderPtr, cformat, &hashType);
+    release_cstring(env, format, cformat);
+
+    if (result < 0) {
+        return -1;
+    }
+    return (jint)hashType;
 }
 
 // Signer native methods

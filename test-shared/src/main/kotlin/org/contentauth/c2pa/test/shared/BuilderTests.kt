@@ -25,6 +25,7 @@ import org.contentauth.c2pa.C2PAContext
 import org.contentauth.c2pa.C2PASettings
 import org.contentauth.c2pa.DigitalSourceType
 import org.contentauth.c2pa.FileStream
+import org.contentauth.c2pa.HashType
 import org.contentauth.c2pa.PredefinedAction
 import org.contentauth.c2pa.Reader
 import org.contentauth.c2pa.Signer
@@ -278,6 +279,35 @@ abstract class BuilderTests : TestBase() {
                     "Builder Add Ingredient",
                     false,
                     "Failed to create builder",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
+    suspend fun testBuilderHashType(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Builder Hash Type") {
+            try {
+                Builder.fromJson(TEST_MANIFEST_JSON).use { builder ->
+                    val jpegType = builder.hashType("image/jpeg")
+                    val mp4Type = builder.hashType("video/mp4")
+                    val success = jpegType == HashType.DATA_HASH && mp4Type == HashType.BMFF_HASH
+                    TestResult(
+                        "Builder Hash Type",
+                        success,
+                        if (success) {
+                            "Hash types resolved correctly"
+                        } else {
+                            "Unexpected hash types"
+                        },
+                        "image/jpeg -> $jpegType, video/mp4 -> $mp4Type",
+                    )
+                }
+            } catch (e: C2PAError) {
+                TestResult(
+                    "Builder Hash Type",
+                    false,
+                    "hashType threw",
                     e.toString(),
                 )
             }
