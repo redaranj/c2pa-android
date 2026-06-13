@@ -284,6 +284,75 @@ abstract class BuilderTests : TestBase() {
         }
     }
 
+    suspend fun testBuilderIngredientArchive(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Builder Ingredient Archive") {
+            val ingredientId = "archive-ingredient-1"
+            val ingredientJson =
+                """{"title": "Archive Ingredient", "format": "image/jpeg", "instance_id": "$ingredientId"}"""
+            // generate_c2pa_archive must be enabled for writeIngredientArchive to succeed.
+            val settingsJson =
+                """
+                {
+                    "version": 1,
+                    "builder": {
+                        "generate_c2pa_archive": true,
+                        "created_assertion_labels": ["c2pa.actions", "c2pa.ingredient.v3"]
+                    }
+                }
+                """.trimIndent()
+
+            try {
+                // Export: build an ingredient archive from one builder.
+                val settings = C2PASettings.create().apply { updateFromString(settingsJson, "json") }
+                val archiveData =
+                    try {
+                        C2PAContext.fromSettings(settings).use { context ->
+                            Builder.fromContext(context).withDefinition(TEST_MANIFEST_JSON).use { ingredientBuilder ->
+                                val ingredientImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                                ByteArrayStream(ingredientImageData).use { ingredientStream ->
+                                    ingredientBuilder.addIngredient(ingredientJson, "image/jpeg", ingredientStream)
+                                }
+                                ByteArrayStream().use { archiveStream ->
+                                    ingredientBuilder.writeIngredientArchive(ingredientId, archiveStream)
+                                    archiveStream.getData()
+                                }
+                            }
+                        }
+                    } finally {
+                        settings.close()
+                    }
+
+                // Import: load that archive into a parent builder.
+                var imported = false
+                Builder.fromJson(TEST_MANIFEST_JSON).use { parentBuilder ->
+                    ByteArrayStream(archiveData).use { archiveStream ->
+                        parentBuilder.addIngredientFromArchive(archiveStream)
+                        imported = true
+                    }
+                }
+
+                val success = archiveData.isNotEmpty() && imported
+                TestResult(
+                    "Builder Ingredient Archive",
+                    success,
+                    if (success) {
+                        "Ingredient archive round-trip succeeded"
+                    } else {
+                        "Ingredient archive round-trip failed"
+                    },
+                    "Archive size: ${archiveData.size} bytes, Imported: $imported",
+                )
+            } catch (e: C2PAError) {
+                TestResult(
+                    "Builder Ingredient Archive",
+                    false,
+                    "Ingredient archive round-trip threw",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
     suspend fun testBuilderFromArchive(): TestResult = withContext(Dispatchers.IO) {
         runTest("Builder from Archive") {
             val manifestJson = TEST_MANIFEST_JSON

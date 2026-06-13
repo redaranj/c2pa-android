@@ -858,6 +858,38 @@ JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_toArchiveNative(JNIEnv 
     return c2pa_builder_to_archive(builder, stream);
 }
 
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_addIngredientFromArchiveNative(JNIEnv *env, jobject obj, jlong builderPtr, jlong streamPtr) {
+    if (builderPtr == 0 || streamPtr == 0) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder and stream cannot be null");
+        return -1;
+    }
+
+    struct C2paBuilder *builder = (struct C2paBuilder*)(uintptr_t)builderPtr;
+    struct C2paStream *stream = (struct C2paStream*)(uintptr_t)streamPtr;
+    return c2pa_builder_add_ingredient_from_archive(builder, stream);
+}
+
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_writeIngredientArchiveNative(JNIEnv *env, jobject obj, jlong builderPtr, jstring ingredientId, jlong streamPtr) {
+    if (builderPtr == 0 || ingredientId == NULL || streamPtr == 0) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder, ingredient id, and stream cannot be null");
+        return -1;
+    }
+
+    const char *cingredientId = jstring_to_cstring(env, ingredientId);
+    if (cingredientId == NULL) {
+        return -1;
+    }
+
+    struct C2paStream *stream = (struct C2paStream*)(uintptr_t)streamPtr;
+    int result = c2pa_builder_write_ingredient_archive(
+        (struct C2paBuilder*)(uintptr_t)builderPtr, cingredientId, stream
+    );
+    release_cstring(env, ingredientId, cingredientId);
+    return result;
+}
+
 JNIEXPORT jobject JNICALL Java_org_contentauth_c2pa_Builder_signNative(JNIEnv *env, jobject obj, jlong builderPtr, jstring format, jlong sourceStreamPtr, jlong destStreamPtr, jlong signerPtr) {
     if (builderPtr == 0 || format == NULL || sourceStreamPtr == 0 || destStreamPtr == 0 || signerPtr == 0) {
         (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"), 

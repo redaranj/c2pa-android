@@ -70,6 +70,12 @@ class AndroidBuilderTests : BuilderTests() {
     }
 
     @Test
+    fun runTestBuilderIngredientArchive() = runBlocking {
+        val result = testBuilderIngredientArchive()
+        assertTrue(result.success, "Builder Ingredient Archive test failed: ${result.message}")
+    }
+
+    @Test
     fun runTestBuilderFromArchive() = runBlocking {
         val result = testBuilderFromArchive()
         assertTrue(result.success, "Builder from Archive test failed: ${result.message}")

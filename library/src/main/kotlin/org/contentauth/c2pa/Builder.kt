@@ -456,6 +456,27 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
     }
 
     /**
+     * Imports an ingredient into this builder from a single-ingredient C2PA archive stream.
+     *
+     * The archive is one previously produced by [writeIngredientArchive]. Rewind the stream to
+     * its start before calling.
+     *
+     * @param archive The input stream containing the single-ingredient archive
+     * @return This builder for fluent chaining
+     * @throws C2PAError.Api if the ingredient cannot be imported
+     *
+     * @see writeIngredientArchive
+     */
+    @Throws(C2PAError::class)
+    fun addIngredientFromArchive(archive: Stream): Builder {
+        val result = addIngredientFromArchiveNative(ptr, archive.rawPtr)
+        if (result < 0) {
+            throw C2PAError.Api(C2PA.getError() ?: "Failed to add ingredient from archive")
+        }
+        return this
+    }
+
+    /**
      * Writes the builder state to an archive stream.
      *
      * Archives are portable representations of a manifest and its associated resources
@@ -469,6 +490,27 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
         val result = toArchiveNative(ptr, dest.rawPtr)
         if (result < 0) {
             throw C2PAError.Api(C2PA.getError() ?: "Failed to write archive")
+        }
+    }
+
+    /**
+     * Writes a single-ingredient C2PA archive for the given ingredient to the destination stream.
+     *
+     * The archive can later be imported into another builder with [addIngredientFromArchive].
+     * This requires the `generate_c2pa_archive` builder setting to be enabled in the settings used
+     * to create this builder.
+     *
+     * @param ingredientId Identifier of the ingredient within this builder to serialize
+     * @param dest The output stream to write the ingredient archive to
+     * @throws C2PAError.Api if the ingredient archive cannot be written
+     *
+     * @see addIngredientFromArchive
+     */
+    @Throws(C2PAError::class)
+    fun writeIngredientArchive(ingredientId: String, dest: Stream) {
+        val result = writeIngredientArchiveNative(ptr, ingredientId, dest.rawPtr)
+        if (result < 0) {
+            throw C2PAError.Api(C2PA.getError() ?: "Failed to write ingredient archive")
         }
     }
 
@@ -572,6 +614,8 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
         sourceHandle: Long,
     ): Int
     private external fun toArchiveNative(handle: Long, streamHandle: Long): Int
+    private external fun addIngredientFromArchiveNative(handle: Long, streamHandle: Long): Int
+    private external fun writeIngredientArchiveNative(handle: Long, ingredientId: String, streamHandle: Long): Int
     private external fun signNative(
         handle: Long,
         format: String,
