@@ -992,7 +992,169 @@ JNIEXPORT jbyteArray JNICALL Java_org_contentauth_c2pa_Builder_signDataHashedEmb
     jbyteArray result = (*env)->NewByteArray(env, size);
     (*env)->SetByteArrayRegion(env, result, 0, size, (const jbyte*)manifestBytes);
     c2pa_free(manifestBytes);
-    
+
+    return result;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_org_contentauth_c2pa_Builder_signEmbeddableNative(JNIEnv *env, jobject obj, jlong builderPtr, jstring format) {
+    if (builderPtr == 0 || format == NULL) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder and format cannot be null");
+        return NULL;
+    }
+
+    struct C2paBuilder *builder = (struct C2paBuilder*)(uintptr_t)builderPtr;
+    const char *cformat = jstring_to_cstring(env, format);
+    if (cformat == NULL) {
+        return NULL;
+    }
+
+    const unsigned char *manifestBytes = NULL;
+    int64_t size = c2pa_builder_sign_embeddable(builder, cformat, &manifestBytes);
+    release_cstring(env, format, cformat);
+
+    if (size < 0 || manifestBytes == NULL) {
+        return NULL;
+    }
+
+    jbyteArray result = safe_new_byte_array(env, size);
+    if (result == NULL) {
+        c2pa_free(manifestBytes);
+        return NULL;
+    }
+    (*env)->SetByteArrayRegion(env, result, 0, size, (const jbyte*)manifestBytes);
+    if (check_exception(env)) {
+        c2pa_free(manifestBytes);
+        return NULL;
+    }
+    c2pa_free(manifestBytes);
+    return result;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_org_contentauth_c2pa_Builder_placeholderNative(JNIEnv *env, jobject obj, jlong builderPtr, jstring format) {
+    if (builderPtr == 0 || format == NULL) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder and format cannot be null");
+        return NULL;
+    }
+
+    struct C2paBuilder *builder = (struct C2paBuilder*)(uintptr_t)builderPtr;
+    const char *cformat = jstring_to_cstring(env, format);
+    if (cformat == NULL) {
+        return NULL;
+    }
+
+    const unsigned char *manifestBytes = NULL;
+    int64_t size = c2pa_builder_placeholder(builder, cformat, &manifestBytes);
+    release_cstring(env, format, cformat);
+
+    if (size < 0 || manifestBytes == NULL) {
+        return NULL;
+    }
+
+    jbyteArray result = safe_new_byte_array(env, size);
+    if (result == NULL) {
+        c2pa_free(manifestBytes);
+        return NULL;
+    }
+    (*env)->SetByteArrayRegion(env, result, 0, size, (const jbyte*)manifestBytes);
+    if (check_exception(env)) {
+        c2pa_free(manifestBytes);
+        return NULL;
+    }
+    c2pa_free(manifestBytes);
+    return result;
+}
+
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_needsPlaceholderNative(JNIEnv *env, jobject obj, jlong builderPtr, jstring format) {
+    if (builderPtr == 0 || format == NULL) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder and format cannot be null");
+        return -1;
+    }
+
+    const char *cformat = jstring_to_cstring(env, format);
+    if (cformat == NULL) {
+        return -1;
+    }
+
+    int result = c2pa_builder_needs_placeholder((struct C2paBuilder*)(uintptr_t)builderPtr, cformat);
+    release_cstring(env, format, cformat);
+    return result;
+}
+
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_setDataHashExclusionsNative(JNIEnv *env, jobject obj, jlong builderPtr, jlongArray exclusions) {
+    if (builderPtr == 0 || exclusions == NULL) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder and exclusions cannot be null");
+        return -1;
+    }
+
+    jsize len = (*env)->GetArrayLength(env, exclusions);
+    if (len % 2 != 0) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Exclusions must be a flat array of (start, length) pairs");
+        return -1;
+    }
+
+    jlong *elems = (*env)->GetLongArrayElements(env, exclusions, NULL);
+    if (elems == NULL) {
+        check_exception(env);
+        return -1;
+    }
+
+    // jlong and uint64_t are both 64-bit; the bit patterns are identical.
+    int result = c2pa_builder_set_data_hash_exclusions(
+        (struct C2paBuilder*)(uintptr_t)builderPtr,
+        (const uint64_t*)elems,
+        (uintptr_t)(len / 2)
+    );
+
+    (*env)->ReleaseLongArrayElements(env, exclusions, elems, JNI_ABORT);
+    return result;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_org_contentauth_c2pa_Builder_formatEmbeddableNative(JNIEnv *env, jclass clazz, jstring format, jbyteArray manifestData) {
+    if (format == NULL || manifestData == NULL) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Format and manifest data cannot be null");
+        return NULL;
+    }
+
+    const char *cformat = jstring_to_cstring(env, format);
+    if (cformat == NULL) {
+        return NULL;
+    }
+
+    jsize dataSize = (*env)->GetArrayLength(env, manifestData);
+    jbyte *data = (*env)->GetByteArrayElements(env, manifestData, NULL);
+    if (data == NULL) {
+        release_cstring(env, format, cformat);
+        check_exception(env);
+        return NULL;
+    }
+
+    const unsigned char *resultBytes = NULL;
+    int64_t size = c2pa_format_embeddable(cformat, (const unsigned char*)data, (uintptr_t)dataSize, &resultBytes);
+
+    (*env)->ReleaseByteArrayElements(env, manifestData, data, JNI_ABORT);
+    release_cstring(env, format, cformat);
+
+    if (size < 0 || resultBytes == NULL) {
+        return NULL;
+    }
+
+    jbyteArray result = safe_new_byte_array(env, size);
+    if (result == NULL) {
+        c2pa_free(resultBytes);
+        return NULL;
+    }
+    (*env)->SetByteArrayRegion(env, result, 0, size, (const jbyte*)resultBytes);
+    if (check_exception(env)) {
+        c2pa_free(resultBytes);
+        return NULL;
+    }
+    c2pa_free(resultBytes);
     return result;
 }
 

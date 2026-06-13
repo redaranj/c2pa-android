@@ -284,6 +284,58 @@ abstract class BuilderTests : TestBase() {
         }
     }
 
+    suspend fun testEmbeddableAndPlaceholder(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Embeddable and Placeholder") {
+            try {
+                // Placeholder composition + needsPlaceholder + setDataHashExclusions.
+                // placeholder() creates the DataHash assertion that exclusions then attach to.
+                val placeholderBytes = Builder.fromJson(TEST_MANIFEST_JSON).use { builder ->
+                    builder.needsPlaceholder("image/jpeg")
+                    val placeholder = builder.placeholder("image/jpeg")
+                    builder.setDataHashExclusions(listOf(0L to 2L))
+                    placeholder
+                }
+
+                // formatEmbeddable over manifest bytes produced by a no-embed sign.
+                val certPem = loadResourceAsString("es256_certs")
+                val keyPem = loadResourceAsString("es256_private")
+                val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                val formattedSize = Builder.fromJson(TEST_MANIFEST_JSON).use { builder ->
+                    builder.setNoEmbed()
+                    ByteArrayStream(sourceImageData).use { source ->
+                        ByteArrayStream().use { dest ->
+                            Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)).use { signer ->
+                                val signResult = builder.sign("image/jpeg", source, dest, signer)
+                                val manifestBytes = signResult.manifestBytes
+                                    ?: throw C2PAError.Api("No manifest bytes from no-embed sign")
+                                Builder.formatEmbeddable("image/jpeg", manifestBytes).size
+                            }
+                        }
+                    }
+                }
+
+                val success = placeholderBytes.isNotEmpty() && formattedSize > 0
+                TestResult(
+                    "Embeddable and Placeholder",
+                    success,
+                    if (success) {
+                        "Placeholder, exclusions, and formatEmbeddable succeeded"
+                    } else {
+                        "Embeddable flow produced empty output"
+                    },
+                    "Placeholder bytes: ${placeholderBytes.size}, Formatted size: $formattedSize",
+                )
+            } catch (e: C2PAError) {
+                TestResult(
+                    "Embeddable and Placeholder",
+                    false,
+                    "Embeddable flow threw",
+                    e.toString(),
+                )
+            }
+        }
+    }
+
     suspend fun testBuilderFromArchive(): TestResult = withContext(Dispatchers.IO) {
         runTest("Builder from Archive") {
             val manifestJson = TEST_MANIFEST_JSON
