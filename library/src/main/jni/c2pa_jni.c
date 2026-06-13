@@ -829,6 +829,23 @@ JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_setRemoteUrlNative(JNIE
     return result;
 }
 
+JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_setBasePathNative(JNIEnv *env, jobject obj, jlong builderPtr, jstring basePath) {
+    if (builderPtr == 0 || basePath == NULL) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder and base path cannot be null");
+        return -1;
+    }
+
+    const char *cbasePath = jstring_to_cstring(env, basePath);
+    if (cbasePath == NULL) {
+        return -1;
+    }
+
+    int result = c2pa_builder_set_base_path((struct C2paBuilder*)(uintptr_t)builderPtr, cbasePath);
+    release_cstring(env, basePath, cbasePath);
+    return result;
+}
+
 JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_addResourceNative(JNIEnv *env, jobject obj, jlong builderPtr, jstring uri, jlong streamPtr) {
     const char *curi = jstring_to_cstring(env, uri);
     struct C2paStream *stream = (struct C2paStream*)(uintptr_t)streamPtr;

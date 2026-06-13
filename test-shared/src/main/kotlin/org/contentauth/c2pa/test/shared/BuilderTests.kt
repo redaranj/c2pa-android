@@ -172,6 +172,64 @@ abstract class BuilderTests : TestBase() {
         }
     }
 
+    suspend fun testBuilderSetBasePath(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Builder Set Base Path") {
+            val manifestJson = TEST_MANIFEST_JSON
+            val baseDir = File.createTempFile("c2pa-base-path", "").let { tmp ->
+                tmp.delete()
+                tmp.mkdirs()
+                tmp
+            }
+
+            try {
+                Builder.fromJson(manifestJson).use { builder ->
+                    // setBasePath is fluent and must not corrupt the builder; a subsequent
+                    // sign should still succeed against the configured base directory.
+                    builder.setBasePath(baseDir.absolutePath)
+
+                    val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+                    val sourceStream = ByteArrayStream(sourceImageData)
+                    val fileTest = File.createTempFile("c2pa-base-path-test", ".jpg")
+                    val destStream = FileStream(fileTest)
+
+                    try {
+                        sourceStream.use {
+                            destStream.use {
+                                val certPem = loadResourceAsString("es256_certs")
+                                val keyPem = loadResourceAsString("es256_private")
+                                Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)).use { signer ->
+                                    val signResult = builder.sign("image/jpeg", sourceStream, destStream, signer)
+                                    val success = signResult.size > 0
+                                    TestResult(
+                                        "Builder Set Base Path",
+                                        success,
+                                        if (success) {
+                                            "Base path set and signing succeeded"
+                                        } else {
+                                            "Signing failed after setting base path"
+                                        },
+                                        "Base dir: ${baseDir.absolutePath}, Sign result size: ${signResult.size}",
+                                    )
+                                }
+                            }
+                        }
+                    } finally {
+                        fileTest.delete()
+                    }
+                }
+            } catch (e: C2PAError) {
+                TestResult(
+                    "Builder Set Base Path",
+                    false,
+                    "Failed to set base path",
+                    e.toString(),
+                )
+            } finally {
+                baseDir.delete()
+            }
+        }
+    }
+
     suspend fun testBuilderAddResource(): TestResult = withContext(Dispatchers.IO) {
         runTest("Builder Add Resource") {
             val manifestJson = TEST_MANIFEST_JSON

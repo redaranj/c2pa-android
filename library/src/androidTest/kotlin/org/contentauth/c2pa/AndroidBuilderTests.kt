@@ -58,6 +58,12 @@ class AndroidBuilderTests : BuilderTests() {
     }
 
     @Test
+    fun runTestBuilderSetBasePath() = runBlocking {
+        val result = testBuilderSetBasePath()
+        assertTrue(result.success, "Builder Set Base Path test failed: ${result.message}")
+    }
+
+    @Test
     fun runTestBuilderAddResource() = runBlocking {
         val result = testBuilderAddResource()
         assertTrue(result.success, "Builder Add Resource test failed: ${result.message}")

@@ -185,6 +185,7 @@ private suspend fun runAllTests(context: Context): List<TestResult> = withContex
     results.add(builderTests.testBuilderOperations())
     results.add(builderTests.testBuilderNoEmbed())
     results.add(builderTests.testBuilderRemoteUrl())
+    results.add(builderTests.testBuilderSetBasePath())
     results.add(builderTests.testBuilderAddResource())
     results.add(builderTests.testBuilderAddIngredient())
     results.add(builderTests.testBuilderFromArchive())

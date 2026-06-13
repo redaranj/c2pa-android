@@ -421,6 +421,25 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
     }
 
     /**
+     * Sets the base path used to resolve relative resource references.
+     *
+     * When the manifest definition references resources by relative path, the builder resolves
+     * them against this base directory on the filesystem.
+     *
+     * @param path The base directory for resolving relative resource references
+     * @return This builder for fluent chaining
+     * @throws C2PAError.Api if the base path cannot be set
+     */
+    @Throws(C2PAError::class)
+    fun setBasePath(path: String): Builder {
+        val result = setBasePathNative(ptr, path)
+        if (result < 0) {
+            throw C2PAError.Api(C2PA.getError() ?: "Failed to set base path")
+        }
+        return this
+    }
+
+    /**
      * Adds a resource to the builder.
      *
      * @param uri The URI identifying the resource
@@ -564,6 +583,7 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
     private external fun addActionNative(handle: Long, actionJson: String): Int
     private external fun setNoEmbedNative(handle: Long)
     private external fun setRemoteUrlNative(handle: Long, remoteUrl: String): Int
+    private external fun setBasePathNative(handle: Long, basePath: String): Int
     private external fun addResourceNative(handle: Long, uri: String, streamHandle: Long): Int
     private external fun addIngredientFromStreamNative(
         handle: Long,
