@@ -285,9 +285,19 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
             return builder
         }
 
+        /**
+         * Returns the MIME types the builder supports for signing.
+         *
+         * @return The supported MIME types (e.g. "image/jpeg"), or an empty list if none
+         */
+        @JvmStatic
+        fun supportedMimeTypes(): List<String> = supportedMimeTypesNative()?.toList() ?: emptyList()
+
         @JvmStatic private external fun nativeFromArchive(streamHandle: Long): Long
 
         @JvmStatic private external fun nativeFromContext(contextPtr: Long): Long
+
+        @JvmStatic private external fun supportedMimeTypesNative(): Array<String>?
     }
 
     /**

@@ -172,6 +172,27 @@ abstract class BuilderTests : TestBase() {
         }
     }
 
+    suspend fun testSupportedMimeTypes(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Supported MIME Types") {
+            val builderTypes = Builder.supportedMimeTypes()
+            val readerTypes = Reader.supportedMimeTypes()
+            val success = builderTypes.isNotEmpty() &&
+                readerTypes.isNotEmpty() &&
+                builderTypes.any { it.equals("image/jpeg", ignoreCase = true) } &&
+                readerTypes.any { it.equals("image/jpeg", ignoreCase = true) }
+            TestResult(
+                "Supported MIME Types",
+                success,
+                if (success) {
+                    "Builder: ${builderTypes.size} types, Reader: ${readerTypes.size} types"
+                } else {
+                    "Expected non-empty lists containing image/jpeg"
+                },
+                "Builder types: ${builderTypes.joinToString()}; Reader types: ${readerTypes.joinToString()}",
+            )
+        }
+    }
+
     suspend fun testBuilderAddResource(): TestResult = withContext(Dispatchers.IO) {
         runTest("Builder Add Resource") {
             val manifestJson = TEST_MANIFEST_JSON

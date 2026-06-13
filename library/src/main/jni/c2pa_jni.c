@@ -175,6 +175,30 @@ static jstring cstring_to_jstring(JNIEnv *env, const char* cstr) {
     return jstr;
 }
 
+// Helper to convert a C string array (as returned by c2pa_*_supported_mime_types)
+// into a Java String[]. Does not free the source array; the caller is responsible.
+static jobjectArray cstring_array_to_jarray(JNIEnv *env, const char *const *items, uintptr_t count) {
+    jclass stringClass = (*env)->FindClass(env, "java/lang/String");
+    if (stringClass == NULL) {
+        check_exception(env);
+        return NULL;
+    }
+    jobjectArray result = (*env)->NewObjectArray(env, (jsize)count, stringClass, NULL);
+    (*env)->DeleteLocalRef(env, stringClass);
+    if (result == NULL) {
+        check_exception(env);
+        return NULL;
+    }
+    for (uintptr_t i = 0; i < count; i++) {
+        jstring item = cstring_to_jstring(env, items[i]);
+        if (item != NULL) {
+            (*env)->SetObjectArrayElement(env, result, (jsize)i, item);
+            (*env)->DeleteLocalRef(env, item);
+        }
+    }
+    return result;
+}
+
 // Thread key destructor - detaches thread when it exits
 static void thread_detach_destructor(void *value) {
     if (value != NULL) {
@@ -749,7 +773,29 @@ JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_Reader_resourceToStreamNative(
     return (jlong)(uintptr_t)result;
 }
 
+JNIEXPORT jobjectArray JNICALL Java_org_contentauth_c2pa_Reader_supportedMimeTypesNative(JNIEnv *env, jclass clazz) {
+    uintptr_t count = 0;
+    const char *const *types = c2pa_reader_supported_mime_types(&count);
+    if (types == NULL) {
+        return NULL;
+    }
+    jobjectArray result = cstring_array_to_jarray(env, types, count);
+    c2pa_free_string_array(types, count);
+    return result;
+}
+
 // Builder native methods
+JNIEXPORT jobjectArray JNICALL Java_org_contentauth_c2pa_Builder_supportedMimeTypesNative(JNIEnv *env, jclass clazz) {
+    uintptr_t count = 0;
+    const char *const *types = c2pa_builder_supported_mime_types(&count);
+    if (types == NULL) {
+        return NULL;
+    }
+    jobjectArray result = cstring_array_to_jarray(env, types, count);
+    c2pa_free_string_array(types, count);
+    return result;
+}
+
 JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_Builder_nativeFromArchive(JNIEnv *env, jclass clazz, jlong streamPtr) {
     if (streamPtr == 0) {
         (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"), 

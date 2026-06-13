@@ -58,6 +58,12 @@ class AndroidBuilderTests : BuilderTests() {
     }
 
     @Test
+    fun runTestSupportedMimeTypes() = runBlocking {
+        val result = testSupportedMimeTypes()
+        assertTrue(result.success, "Supported MIME Types test failed: ${result.message}")
+    }
+
+    @Test
     fun runTestBuilderAddResource() = runBlocking {
         val result = testBuilderAddResource()
         assertTrue(result.success, "Builder Add Resource test failed: ${result.message}")
