@@ -108,6 +108,11 @@ class Signer internal constructor(internal var ptr: Long) : Closeable {
          * }
          * ```
          */
+        @Deprecated(
+            "Settings-based signers rely on deprecated core APIs (c2pa_load_settings / " +
+                "c2pa_signer_from_settings). Configure the signer in C2PASettings, build a " +
+                "C2PAContext, and sign via Builder.signWithContext(). See GP-305.",
+        )
         @JvmStatic
         @Throws(C2PAError::class)
         fun fromSettingsJson(settingsJson: String): Signer =
@@ -154,6 +159,11 @@ class Signer internal constructor(internal var ptr: Long) : Closeable {
          * referenced_assertions = ["cawg.training-mining"]
          * ```
          */
+        @Deprecated(
+            "Settings-based signers rely on deprecated core APIs (c2pa_load_settings / " +
+                "c2pa_signer_from_settings). Configure the signer in C2PASettings, build a " +
+                "C2PAContext, and sign via Builder.signWithContext(). See GP-305.",
+        )
         @JvmStatic
         @Throws(C2PAError::class)
         fun fromSettingsToml(settingsToml: String): Signer =
@@ -189,6 +199,10 @@ class Signer internal constructor(internal var ptr: Long) : Closeable {
          * @param format The format of the settings string ("json" or "toml").
          * @throws C2PAError if the settings are invalid.
          */
+        @Deprecated(
+            "Global settings apply relies on the deprecated c2pa_load_settings. Configure settings " +
+                "in C2PASettings and build a C2PAContext instead. See GP-305.",
+        )
         @JvmStatic
         @Throws(C2PAError::class)
         fun loadSettings(settings: String, format: String) {
