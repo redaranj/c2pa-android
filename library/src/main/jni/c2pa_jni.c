@@ -595,15 +595,28 @@ JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_Reader_fromStreamNative(JNIEnv
     }
     
     struct C2paStream *stream = (struct C2paStream*)(uintptr_t)streamPtr;
-    struct C2paReader *reader = c2pa_reader_from_stream(cformat, stream);
-    
+
+    // Use the non-deprecated context-based path: create a reader from a default
+    // context, then attach the stream. The context can be released once the
+    // reader has been created from it.
+    struct C2paContext *ctx = c2pa_context_new();
+    struct C2paReader *reader = NULL;
+    if (ctx != NULL) {
+        struct C2paReader *base = c2pa_reader_from_context(ctx);
+        if (base != NULL) {
+            // with_stream consumes `base` and returns a new reader.
+            reader = c2pa_reader_with_stream(base, cformat, stream);
+        }
+        c2pa_free(ctx);
+    }
+
     release_cstring(env, format, cformat);
-    
+
     if (reader == NULL) {
         throw_c2pa_exception(env, "Failed to create reader from stream");
         return 0;
     }
-    
+
     return (jlong)(uintptr_t)reader;
 }
 
