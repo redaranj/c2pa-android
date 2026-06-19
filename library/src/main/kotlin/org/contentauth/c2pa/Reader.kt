@@ -287,6 +287,27 @@ class Reader internal constructor(private var ptr: Long) : Closeable {
     }
 
     /**
+     * Returns the manifest as a crJSON string (new in c2pa-rs 0.88.0).
+     *
+     * crJSON is an alternative JSON serialization of the manifest store. Use [json] for the
+     * standard representation or [detailedJson] for the verbose one.
+     *
+     * @return The manifest as a crJSON string
+     * @throws C2PAError.Api if the manifest cannot be serialized
+     *
+     * @see json
+     * @see detailedJson
+     */
+    @Throws(C2PAError::class)
+    fun crJSON(): String {
+        val json = crjsonNative(ptr)
+        if (json == null) {
+            throw C2PAError.Api(C2PA.getError() ?: "Failed to convert to crJSON")
+        }
+        return json
+    }
+
+    /**
      * Returns the remote URL where the manifest is hosted, if available.
      *
      * This method returns the URL specified when the manifest was created with
@@ -385,6 +406,7 @@ class Reader internal constructor(private var ptr: Long) : Closeable {
     private external fun withFragmentNative(handle: Long, format: String, streamHandle: Long, fragmentHandle: Long): Long
     private external fun toJsonNative(handle: Long): String?
     private external fun toDetailedJsonNative(handle: Long): String?
+    private external fun crjsonNative(handle: Long): String?
     private external fun remoteUrlNative(handle: Long): String?
     private external fun isEmbeddedNative(handle: Long): Boolean
     private external fun resourceToStreamNative(handle: Long, uri: String, streamHandle: Long): Long
