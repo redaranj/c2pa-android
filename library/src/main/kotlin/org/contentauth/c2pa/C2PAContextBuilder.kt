@@ -13,6 +13,7 @@ each license.
 package org.contentauth.c2pa
 
 import java.io.Closeable
+import okhttp3.OkHttpClient
 
 /**
  * Mutable builder for assembling a configured [C2PAContext].
@@ -138,6 +139,41 @@ class C2PAContextBuilder internal constructor(private var ptr: Long) : Closeable
     }
 
     /**
+     * Attaches a custom HTTP resolver invoked when the SDK needs to make an HTTP request
+     * (remote-manifest fetch, OCSP, timestamp) on contexts derived from this builder.
+     *
+     * The resolver is called synchronously and is retained until the built [C2PAContext] is closed.
+     *
+     * @param resolver The resolver
+     * @return This builder for fluent chaining
+     * @throws C2PAError.Api if the resolver cannot be attached
+     */
+    @Throws(C2PAError::class)
+    fun setHttpResolver(resolver: HttpResolver): C2PAContextBuilder {
+        if (ptr == 0L) {
+            throw C2PAError.Api("context builder is already consumed")
+        }
+        val callbackPtr = setHttpResolverNative(ptr, HttpResolverBridge(resolver))
+        if (callbackPtr == 0L) {
+            throw C2PAError.Api(C2PA.getError() ?: "Failed to set HTTP resolver")
+        }
+        callbackContexts.add(callbackPtr)
+        return this
+    }
+
+    /**
+     * Convenience [setHttpResolver] backed by an [OkHttpClient] (defaults to a new client).
+     *
+     * @param client The OkHttp client to perform requests with
+     * @return This builder for fluent chaining
+     * @throws C2PAError.Api if the resolver cannot be attached
+     */
+    @JvmOverloads
+    @Throws(C2PAError::class)
+    fun setHttpResolver(client: OkHttpClient = OkHttpClient()): C2PAContextBuilder =
+        setHttpResolver(OkHttpHttpResolver(client))
+
+    /**
      * Builds an immutable, shareable [C2PAContext] from this builder.
      *
      * The builder is *consumed* by this call and must not be used again; [close] afterward is a
@@ -183,5 +219,6 @@ class C2PAContextBuilder internal constructor(private var ptr: Long) : Closeable
     private external fun setSettingsNative(handle: Long, settingsPtr: Long): Int
     private external fun setSignerNative(handle: Long, signerPtr: Long): Int
     private external fun setProgressCallbackNative(handle: Long, bridge: ProgressCallbackBridge): Long
+    private external fun setHttpResolverNative(handle: Long, bridge: HttpResolverBridge): Long
     private external fun buildNative(handle: Long): Long
 }

@@ -439,6 +439,84 @@ static int java_progress_callback(const void *context, enum C2paProgressPhase ph
     return 1;
 }
 
+// HTTP resolver trampoline. Marshals the C request into the Kotlin bridge, reads back
+// status + body from the returned HttpResponse, and mallocs the body for Rust to free.
+// Returns 0 on success, -1 on error (with c2pa_error_set_last set).
+static int java_http_resolver_callback(void *context, const struct C2paHttpRequest *request,
+                                       struct C2paHttpResponse *response) {
+    JavaContextCallback *jctx = (JavaContextCallback*)context;
+    if (jctx == NULL || !jctx->isActive) {
+        c2pa_error_set_last("HTTP resolver is no longer active");
+        return -1;
+    }
+
+    JNIEnv *env = get_jni_env();
+    if (env == NULL) {
+        c2pa_error_set_last("Failed to attach JNI environment for HTTP resolver");
+        return -1;
+    }
+
+    jstring jurl = (request->url != NULL) ? cstring_to_jstring(env, request->url) : NULL;
+    jstring jmethod = (request->method != NULL) ? cstring_to_jstring(env, request->method) : NULL;
+    jstring jheaders = (request->headers != NULL) ? cstring_to_jstring(env, request->headers) : NULL;
+    jbyteArray jbody = NULL;
+    if (request->body != NULL && request->body_len > 0 && request->body_len <= INT32_MAX) {
+        jbody = safe_new_byte_array(env, (jsize)request->body_len);
+        if (jbody != NULL) {
+            (*env)->SetByteArrayRegion(env, jbody, 0, (jsize)request->body_len, (const jbyte*)request->body);
+        }
+    }
+
+    // Bridge: resolve(String url, String method, String headers, byte[] body) -> HttpResponse
+    jobject jresp = (*env)->CallObjectMethod(env, jctx->callback, jctx->method, jurl, jmethod, jheaders, jbody);
+    if (jurl != NULL) (*env)->DeleteLocalRef(env, jurl);
+    if (jmethod != NULL) (*env)->DeleteLocalRef(env, jmethod);
+    if (jheaders != NULL) (*env)->DeleteLocalRef(env, jheaders);
+    if (jbody != NULL) (*env)->DeleteLocalRef(env, jbody);
+
+    if (check_exception(env) || jresp == NULL) {
+        c2pa_error_set_last("HTTP resolver callback failed");
+        return -1;
+    }
+
+    jclass respClass = (*env)->GetObjectClass(env, jresp);
+    jmethodID getStatus = (*env)->GetMethodID(env, respClass, "getStatus", "()I");
+    jmethodID getBody = (*env)->GetMethodID(env, respClass, "getBody", "()[B");
+    (*env)->DeleteLocalRef(env, respClass);
+    if (getStatus == NULL || getBody == NULL) {
+        (*env)->DeleteLocalRef(env, jresp);
+        check_exception(env);
+        c2pa_error_set_last("Invalid HttpResponse from resolver");
+        return -1;
+    }
+
+    jint status = (*env)->CallIntMethod(env, jresp, getStatus);
+    jbyteArray respBody = (jbyteArray)(*env)->CallObjectMethod(env, jresp, getBody);
+    (*env)->DeleteLocalRef(env, jresp);
+
+    response->status = (int32_t)status;
+    response->body = NULL;
+    response->body_len = 0;
+
+    if (respBody != NULL) {
+        jsize blen = (*env)->GetArrayLength(env, respBody);
+        if (blen > 0) {
+            unsigned char *buf = (unsigned char*)malloc((size_t)blen);
+            if (buf == NULL) {
+                (*env)->DeleteLocalRef(env, respBody);
+                c2pa_error_set_last("Out of memory copying HTTP response body");
+                return -1;
+            }
+            (*env)->GetByteArrayRegion(env, respBody, 0, blen, (jbyte*)buf);
+            response->body = buf;          // Rust takes ownership and frees with free()
+            response->body_len = (uintptr_t)blen;
+        }
+        (*env)->DeleteLocalRef(env, respBody);
+    }
+
+    return 0;
+}
+
 // Native methods implementation
 
 JNIEXPORT jstring JNICALL Java_org_contentauth_c2pa_C2PA_version(JNIEnv *env, jclass clazz) {
@@ -1420,6 +1498,62 @@ JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PAContextBuilder_setProgress
         (*env)->DeleteGlobalRef(env, jctx->callback);
         free(jctx);
         throw_c2pa_exception(env, "Failed to set progress callback");
+        return 0;
+    }
+
+    // Ownership of jctx transfers to the built context (freed in C2PAContext.close()).
+    return (jlong)(uintptr_t)jctx;
+}
+
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PAContextBuilder_setHttpResolverNative(JNIEnv *env, jobject obj, jlong builderPtr, jobject bridge) {
+    if (builderPtr == 0 || bridge == NULL) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder and HTTP resolver cannot be null");
+        return 0;
+    }
+
+    JavaContextCallback *jctx = (JavaContextCallback*)calloc(1, sizeof(JavaContextCallback));
+    if (jctx == NULL) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/OutOfMemoryError"),
+                         "Failed to allocate HTTP resolver context");
+        return 0;
+    }
+
+    jctx->callback = (*env)->NewGlobalRef(env, bridge);
+    if (jctx->callback == NULL) {
+        free(jctx);
+        check_exception(env);
+        return 0;
+    }
+
+    jclass bridgeClass = (*env)->GetObjectClass(env, bridge);
+    jctx->method = (*env)->GetMethodID(env, bridgeClass, "resolve",
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[B)Lorg/contentauth/c2pa/HttpResponse;");
+    (*env)->DeleteLocalRef(env, bridgeClass);
+    if (jctx->method == NULL) {
+        (*env)->DeleteGlobalRef(env, jctx->callback);
+        free(jctx);
+        check_exception(env);
+        return 0;
+    }
+
+    jctx->isActive = JNI_TRUE;
+
+    struct C2paHttpResolver *resolver = c2pa_http_resolver_create(jctx, java_http_resolver_callback);
+    if (resolver == NULL) {
+        (*env)->DeleteGlobalRef(env, jctx->callback);
+        free(jctx);
+        throw_c2pa_exception(env, "Failed to create HTTP resolver");
+        return 0;
+    }
+
+    int result = c2pa_context_builder_set_http_resolver((struct C2paContextBuilder*)(uintptr_t)builderPtr, resolver);
+    if (result != 0) {
+        // set_http_resolver only consumes the resolver on success; free it on failure.
+        c2pa_free(resolver);
+        (*env)->DeleteGlobalRef(env, jctx->callback);
+        free(jctx);
+        throw_c2pa_exception(env, "Failed to set HTTP resolver");
         return 0;
     }
 
