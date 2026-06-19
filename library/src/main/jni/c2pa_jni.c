@@ -43,6 +43,15 @@ typedef struct {
     jboolean isActive;     // Track if context is still valid
 } JavaSignerContext;
 
+// Context-builder callback context (progress observer / HTTP resolver).
+// Lifetime: created on the builder, ownership transferred to the built C2PAContext,
+// and freed when that context is closed. Mirrors the signer-callback pattern.
+typedef struct {
+    jobject callback;      // Global reference to the Kotlin bridge object
+    jmethodID method;      // Cached bridge method id
+    jboolean isActive;
+} JavaContextCallback;
+
 typedef struct SignerContextNode {
     JavaSignerContext *context;
     struct C2paSigner *signer;
@@ -408,6 +417,26 @@ static intptr_t java_signer_callback(const void *context, const unsigned char *d
     
     (*env)->DeleteLocalRef(env, jsignature);
     return sig_len;
+}
+
+// Progress callback trampoline. The Kotlin side is a Void observer, so this always
+// returns 1 (continue) — cancellation is exposed separately via C2PAContext.cancel(),
+// per the cross-platform API decision (GP-263).
+static int java_progress_callback(const void *context, enum C2paProgressPhase phase, uint32_t step, uint32_t total) {
+    JavaContextCallback *jctx = (JavaContextCallback*)context;
+    if (jctx == NULL || !jctx->isActive) {
+        return 1;
+    }
+
+    JNIEnv *env = get_jni_env();
+    if (env == NULL) {
+        return 1;
+    }
+
+    // Bridge signature: onProgress(int phase, long step, long total) -> void
+    (*env)->CallVoidMethod(env, jctx->callback, jctx->method, (jint)phase, (jlong)step, (jlong)total);
+    check_exception(env);
+    return 1;
 }
 
 // Native methods implementation
@@ -1304,6 +1333,20 @@ JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2PAContext_cancelNative(JNIEnv
     return c2pa_context_cancel((struct C2paContext*)(uintptr_t)contextPtr);
 }
 
+// Frees a context callback (progress/HTTP-resolver) struct owned by a built context.
+// Called from C2PAContext.close() after the context itself has been freed.
+JNIEXPORT void JNICALL Java_org_contentauth_c2pa_C2PAContext_freeCallbackContextNative(JNIEnv *env, jclass clazz, jlong callbackPtr) {
+    if (callbackPtr == 0) {
+        return;
+    }
+    JavaContextCallback *jctx = (JavaContextCallback*)(uintptr_t)callbackPtr;
+    jctx->isActive = JNI_FALSE;
+    if (jctx->callback != NULL) {
+        (*env)->DeleteGlobalRef(env, jctx->callback);
+    }
+    free(jctx);
+}
+
 // Context builder methods
 JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PAContextBuilder_nativeNew(JNIEnv *env, jclass clazz) {
     struct C2paContextBuilder *builder = c2pa_context_builder_new();
@@ -1333,6 +1376,55 @@ JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_C2PAContextBuilder_setSignerNat
         (struct C2paContextBuilder*)(uintptr_t)builderPtr,
         (struct C2paSigner*)(uintptr_t)signerPtr
     );
+}
+
+JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PAContextBuilder_setProgressCallbackNative(JNIEnv *env, jobject obj, jlong builderPtr, jobject bridge) {
+    if (builderPtr == 0 || bridge == NULL) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
+                         "Builder and progress callback cannot be null");
+        return 0;
+    }
+
+    JavaContextCallback *jctx = (JavaContextCallback*)calloc(1, sizeof(JavaContextCallback));
+    if (jctx == NULL) {
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/OutOfMemoryError"),
+                         "Failed to allocate progress callback context");
+        return 0;
+    }
+
+    jctx->callback = (*env)->NewGlobalRef(env, bridge);
+    if (jctx->callback == NULL) {
+        free(jctx);
+        check_exception(env);
+        return 0;
+    }
+
+    jclass bridgeClass = (*env)->GetObjectClass(env, bridge);
+    jctx->method = (*env)->GetMethodID(env, bridgeClass, "onProgress", "(IJJ)V");
+    (*env)->DeleteLocalRef(env, bridgeClass);
+    if (jctx->method == NULL) {
+        (*env)->DeleteGlobalRef(env, jctx->callback);
+        free(jctx);
+        check_exception(env);
+        return 0;
+    }
+
+    jctx->isActive = JNI_TRUE;
+
+    int result = c2pa_context_builder_set_progress_callback(
+        (struct C2paContextBuilder*)(uintptr_t)builderPtr,
+        jctx,
+        java_progress_callback
+    );
+    if (result != 0) {
+        (*env)->DeleteGlobalRef(env, jctx->callback);
+        free(jctx);
+        throw_c2pa_exception(env, "Failed to set progress callback");
+        return 0;
+    }
+
+    // Ownership of jctx transfers to the built context (freed in C2PAContext.close()).
+    return (jlong)(uintptr_t)jctx;
 }
 
 JNIEXPORT jlong JNICALL Java_org_contentauth_c2pa_C2PAContextBuilder_buildNative(JNIEnv *env, jobject obj, jlong builderPtr) {

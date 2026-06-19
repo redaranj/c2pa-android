@@ -43,6 +43,11 @@ import java.io.Closeable
  */
 class C2PAContextBuilder internal constructor(private var ptr: Long) : Closeable {
 
+    // Native callback-context pointers created via setProgressCallback/setHttpResolver.
+    // Ownership transfers to the built C2PAContext on build(); freed here if the builder is
+    // abandoned or the build fails.
+    private val callbackContexts = mutableListOf<Long>()
+
     companion object {
         init {
             loadC2PALibraries()
@@ -109,10 +114,35 @@ class C2PAContextBuilder internal constructor(private var ptr: Long) : Closeable
     }
 
     /**
+     * Attaches a progress observer invoked at checkpoints during signing/reading on contexts (and
+     * the readers/builders) derived from this builder.
+     *
+     * The observer is notification-only; to cancel an in-flight operation call [C2PAContext.cancel].
+     * The observer is retained until the built [C2PAContext] is closed.
+     *
+     * @param observer The progress observer
+     * @return This builder for fluent chaining
+     * @throws C2PAError.Api if the callback cannot be attached
+     */
+    @Throws(C2PAError::class)
+    fun setProgressCallback(observer: ProgressObserver): C2PAContextBuilder {
+        if (ptr == 0L) {
+            throw C2PAError.Api("context builder is already consumed")
+        }
+        val callbackPtr = setProgressCallbackNative(ptr, ProgressCallbackBridge(observer))
+        if (callbackPtr == 0L) {
+            throw C2PAError.Api(C2PA.getError() ?: "Failed to set progress callback")
+        }
+        callbackContexts.add(callbackPtr)
+        return this
+    }
+
+    /**
      * Builds an immutable, shareable [C2PAContext] from this builder.
      *
      * The builder is *consumed* by this call and must not be used again; [close] afterward is a
-     * safe no-op.
+     * safe no-op. Any callbacks configured on this builder are transferred to the built context and
+     * freed when it is closed.
      *
      * @return The built [C2PAContext]
      * @throws C2PAError.Api if the context cannot be built
@@ -126,9 +156,15 @@ class C2PAContextBuilder internal constructor(private var ptr: Long) : Closeable
         // build() consumes the builder regardless of outcome.
         ptr = 0L
         if (handle == 0L) {
+            // The builder (and its registered callbacks) is gone; free the orphaned callback boxes.
+            callbackContexts.forEach { C2PAContext.releaseCallbackContext(it) }
+            callbackContexts.clear()
             throw C2PAError.Api(C2PA.getError() ?: "Failed to build context")
         }
-        return C2PAContext(handle)
+        val context = C2PAContext(handle)
+        context.attachCallbackContexts(callbackContexts.toLongArray())
+        callbackContexts.clear()
+        return context
     }
 
     override fun close() {
@@ -136,10 +172,16 @@ class C2PAContextBuilder internal constructor(private var ptr: Long) : Closeable
             free(ptr)
             ptr = 0
         }
+        // Free callbacks not transferred to a built context (builder abandoned without build()).
+        if (callbackContexts.isNotEmpty()) {
+            callbackContexts.forEach { C2PAContext.releaseCallbackContext(it) }
+            callbackContexts.clear()
+        }
     }
 
     private external fun free(handle: Long)
     private external fun setSettingsNative(handle: Long, settingsPtr: Long): Int
     private external fun setSignerNative(handle: Long, signerPtr: Long): Int
+    private external fun setProgressCallbackNative(handle: Long, bridge: ProgressCallbackBridge): Long
     private external fun buildNative(handle: Long): Long
 }
