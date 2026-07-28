@@ -300,6 +300,7 @@ class Reader internal constructor(private var ptr: Long) : Closeable {
      * Returns the manifest store as a crJSON string.
      *
      * crJSON is the Content Credentials JSON export format defined by the crJSON specification.
+     * It is primarily used for testing application conformance, but may evolve to have other uses.
      * Use [json] for the standard representation or [detailedJson] for the verbose one.
      *
      * @return The manifest as a crJSON string
