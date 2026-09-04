@@ -1,16 +1,20 @@
 # Reusable sync loop for the c2pa-rs tracking branches. Invoked by
-# track-c2pa-rs-stable.yml and track-c2pa-rs-rc.yml.
+# track-c2pa-rs-stable.yml, track-c2pa-rs-rc.yml and track-c2pa-rs-main.yml.
 #
 # Each tracking branch is always origin/main plus exactly one pin-bump commit,
 # hard-reset on every sync. Nothing ever originates on a tracking branch, so
 # a fix is always an ordinary PR to main; the next sync picks it up.
+#
+# In main mode there is no released version to pin, so that single commit is an
+# empty marker commit: it records the upstream commit the branch was built
+# against and changes nothing in the tree.
 name: Track c2pa-rs
 
 on:
   workflow_call:
     inputs:
       mode:
-        description: "Tracking mode: stable or rc."
+        description: "Tracking mode: stable, rc, or main."
         required: true
         type: string
       branch:
@@ -23,7 +27,7 @@ on:
         default: contentauth/c2pa-rs
         type: string
       version:
-        description: "Pin this exact version instead of resolving one."
+        description: "Pin this exact version instead of resolving one. Ignored in main mode; use upstream_ref."
         required: false
         default: ""
         type: string
@@ -32,6 +36,11 @@ on:
         required: false
         default: false
         type: boolean
+      upstream_ref:
+        description: "main mode only: upstream branch or commit to build. Defaults to main."
+        required: false
+        default: main
+        type: string
 
 permissions:
   contents: write
@@ -67,6 +76,8 @@ jobs:
       version: ${{ steps.resolve.outputs.version }}
       proceed: ${{ steps.guard.outputs.proceed }}
       main_sha: ${{ steps.guard.outputs.main_sha }}
+      upstream_sha: ${{ steps.resolve.outputs.upstream_sha }}
+      previous_target: ${{ steps.guard.outputs.previous_target }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -79,8 +90,20 @@ jobs:
           MODE: ${{ inputs.mode }}
           SOURCE_REPO: ${{ inputs.source_repo }}
           PINNED: ${{ inputs.version }}
+          UPSTREAM_REF: ${{ inputs.upstream_ref }}
         run: |
           set -euo pipefail
+
+          if [ "$MODE" = "main" ]; then
+            # main has no releases; the target is a commit. The short form is
+            # what the marker, branch commit subject and issue body carry; the
+            # full SHA feeds the clone and the compare link.
+            sha="$(gh api "repos/${SOURCE_REPO}/commits/${UPSTREAM_REF}" --jq .sha)"
+            echo "Resolved ${SOURCE_REPO}@${UPSTREAM_REF} to ${sha}"
+            echo "version=main@${sha:0:12}" >> "$GITHUB_OUTPUT"
+            echo "upstream_sha=${sha}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           if [ -n "$PINNED" ]; then
             echo "Using explicitly requested version $PINNED"
@@ -116,7 +139,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Preflight Release Assets
-        if: steps.resolve.outputs.version != ''
+        if: inputs.mode != 'main' && steps.resolve.outputs.version != ''
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_REPO: ${{ inputs.source_repo }}
@@ -137,6 +160,15 @@ jobs:
           main_sha="$(git rev-parse origin/main)"
           echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
 
+          # main mode: remember what the branch tracked before this run, for
+          # the compare link in the report. Sync force-pushes the branch before
+          # report runs, so this is the only place the old tip is still visible.
+          previous=""
+          if git rev-parse --verify "origin/${BRANCH}" >/dev/null 2>&1; then
+            previous="$(git log -1 --format=%B "origin/${BRANCH}" | sed -n 's/^c2pa-track: [0-9a-f]* \(main@[0-9a-f]*\)$/\1/p' | head -1)"
+          fi
+          echo "previous_target=${previous}" >> "$GITHUB_OUTPUT"
+
           # The sync commit carries this marker in its body, so the branch tip
           # itself records the (main SHA, version) pair it was built from.
           # Without this guard, schedule and push:main both firing produce
@@ -155,7 +187,9 @@ jobs:
     needs: resolve
     if: needs.resolve.outputs.proceed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Four cold cross builds of c2pa-c-ffi plus the emulator suite do not fit
+    # in 60 minutes.
+    timeout-minutes: ${{ inputs.mode == 'main' && 120 || 60 }}
     outputs:
       result: ${{ steps.outcome.outputs.result }}
     steps:
@@ -174,6 +208,7 @@ jobs:
 
       - name: Build the Tracking Branch
         env:
+          MODE: ${{ inputs.mode }}
           BRANCH: ${{ inputs.branch }}
           VERSION: ${{ needs.resolve.outputs.version }}
           MAIN_SHA: ${{ needs.resolve.outputs.main_sha }}
@@ -193,18 +228,57 @@ jobs:
           # since resolve ran, and the marker must record the true tip built.
           git checkout -B "$BRANCH" "$MAIN_SHA"
 
-          # GNU sed -- this job runs on Linux.
-          sed -i "s/^c2paVersion=.*/c2paVersion=${VERSION}/" library/gradle.properties
-          grep '^c2paVersion=' library/gradle.properties
+          if [ "$MODE" != "main" ]; then
+            # GNU sed -- this job runs on Linux.
+            sed -i "s/^c2paVersion=.*/c2paVersion=${VERSION}/" library/gradle.properties
+            grep '^c2paVersion=' library/gradle.properties
+            git add library/gradle.properties
+          fi
 
-          git add library/gradle.properties
           # --allow-empty: right after the promotion PR merges, main is
           # already pinned to the resolved version, so sed is a no-op. That
           # is the normal steady state, not an error -- the marker commit
           # must still land so the idempotence guard has something to see.
+          # In main mode there is no pin at all, so the commit is always empty.
           git commit --allow-empty \
             -m "chore: track c2pa-rs ${VERSION}" \
             -m "c2pa-track: ${MAIN_SHA} ${VERSION}"
+
+      - name: Install Rust
+        if: inputs.mode == 'main'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Clone c2pa-rs
+        if: inputs.mode == 'main'
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
+        run: |
+          set -euo pipefail
+          # Single-commit fetch of the exact SHA resolve recorded, not
+          # whatever the branch is by now.
+          git init -q "$RUNNER_TEMP/c2pa-rs"
+          git -C "$RUNNER_TEMP/c2pa-rs" fetch -q --depth 1 \
+            "${GITHUB_SERVER_URL}/${SOURCE_REPO}.git" "$UPSTREAM_SHA"
+          git -C "$RUNNER_TEMP/c2pa-rs" checkout -q FETCH_HEAD
+
+      - name: Cache Cargo
+        if: inputs.mode == 'main'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ runner.temp }}/c2pa-rs
+          key: android-archives
+          # A red run still compiled every dependency; keep that for next time.
+          cache-on-failure: true
+
+      - name: Build c2pa-rs Android Archives
+        id: archives
+        if: inputs.mode == 'main'
+        # Reported separately from the AAR build and the tests: a C API that
+        # does not compile for an Android target is upstream's break, in Rust,
+        # before any of our code is involved.
+        continue-on-error: true
+        run: .github/scripts/build-c2pa-archives.sh "$RUNNER_TEMP/c2pa-rs" "$RUNNER_TEMP/c2pa-archives"
 
       # Split from the test run below because on Android the two failures
       # mean different things and the split is free: this step downloads the
@@ -215,8 +289,14 @@ jobs:
       # gets force-pushed either way.
       - name: Build the AAR
         id: build_aar
+        # In main mode the AAR only means something against archives that
+        # actually built.
+        if: inputs.mode != 'main' || steps.archives.outcome == 'success'
         continue-on-error: true
-        run: make library
+        env:
+          # Empty outside main mode, which the Makefile treats as unset.
+          C2PA_ARCHIVE_DIR: ${{ inputs.mode == 'main' && format('{0}/c2pa-archives', runner.temp) || '' }}
+        run: make library C2PA_ARCHIVE_DIR="$C2PA_ARCHIVE_DIR"
 
       - name: Enable KVM
         if: steps.build_aar.outcome == 'success'
@@ -256,6 +336,8 @@ jobs:
         env:
           BEARER_TOKEN: test-12345
           SIGNING_SERVER_URL: http://10.0.2.2:8080
+          # Empty outside main mode, which the Makefile treats as unset.
+          C2PA_ARCHIVE_DIR: ${{ inputs.mode == 'main' && format('{0}/c2pa-archives', runner.temp) || '' }}
         with:
           api-level: ${{ env.EMULATOR_API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}
@@ -263,16 +345,32 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save ${{ env.EMULATOR_OPTIONS }}
           disable-animations: true
+          # C2PA_ARCHIVE_DIR reaches the sub-make through the environment; make
+          # forwards it to the `tests` target tests-with-server re-enters.
           script: make tests-with-server
 
       - name: Upload Test Results
         # Only on red: this workflow runs unattended several times a day per
         # branch, so the reports are only of interest when something broke.
-        if: steps.build_aar.outcome != 'success' || steps.build.outcome != 'success'
+        if: steps.build_aar.outcome == 'failure' || steps.build.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: TestResults-${{ needs.resolve.outputs.version }}-${{ github.run_id }}
           path: library/build/reports/androidTests/
+          if-no-files-found: warn
+
+      - name: Upload Self-Built Archives
+        # Only on red, so the break can be debugged without a full rebuild.
+        if: |
+          inputs.mode == 'main' && (
+            steps.archives.outcome == 'failure' ||
+            steps.build_aar.outcome == 'failure' ||
+            steps.build.outcome == 'failure'
+          )
+        uses: actions/upload-artifact@v4
+        with:
+          name: c2pa-archives-${{ needs.resolve.outputs.version }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/c2pa-archives
           if-no-files-found: warn
 
       # Pushed regardless of test outcome: the branch reflects upstream
@@ -297,7 +395,9 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          if [ "${{ steps.build_aar.outcome }}" != "success" ]; then
+          if [ "${{ steps.archives.outcome }}" = "failure" ]; then
+            echo "result=capi-failure" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.build_aar.outcome }}" != "success" ]; then
             echo "result=build-failure" >> "$GITHUB_OUTPUT"
           elif [ "${{ steps.build.outcome }}" != "success" ]; then
             echo "result=failure" >> "$GITHUB_OUTPUT"
@@ -399,6 +499,7 @@ jobs:
 
       - name: Read Previous Pinned Version
         id: previous
+        if: inputs.mode != 'main'
         run: |
           set -euo pipefail
           previous="$(grep '^c2paVersion=' library/gradle.properties | cut -d'=' -f2 | xargs)"
@@ -453,6 +554,8 @@ jobs:
           SOURCE_REPO: ${{ inputs.source_repo }}
           VERSION: ${{ needs.resolve.outputs.version }}
           PREVIOUS_VERSION: ${{ steps.previous.outputs.version }}
+          UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
+          PREVIOUS_TARGET: ${{ needs.resolve.outputs.previous_target }}
           MAIN_SHA: ${{ needs.resolve.outputs.main_sha }}
           SYNC_RESULT: ${{ needs.sync.outputs.result }}
           MATRIX_RESULT: ${{ needs.matrix.result }}
@@ -460,21 +563,31 @@ jobs:
         run: |
           set -euo pipefail
 
-          release_url="${GITHUB_SERVER_URL}/${SOURCE_REPO}/releases/tag/c2pa-${VERSION}"
           run_url="${GITHUB_SERVER_URL}/${REPO}/actions/runs/${GITHUB_RUN_ID}"
 
           if [ "$MODE" = "stable" ]; then
             urgency="**Urgent.** ${VERSION} is already published upstream and our \`main\` cannot move to it until this is resolved."
-          else
+          elif [ "$MODE" = "rc" ]; then
             urgency="Informational. This is the early-warning system working: a breaking release is baking upstream on the rc train, and there is time to react before it is promoted to stable."
+          else
+            urgency="Informational. This is the earliest warning available: upstream \`main\` at \`${UPSTREAM_SHA}\` does not work with our \`main\`. Nothing is released yet; the change may still be reverted upstream, or it may be the first sign of the next breaking train."
           fi
 
-          if [ "$SYNC_RESULT" = "build-failure" ]; then
+          if [ "$SYNC_RESULT" = "capi-failure" ]; then
+            result="capi-failure"
+            state_note="The c2pa-c-ffi C API did not compile or package for at least one Android target, so neither \`make library\` nor the tests ran. The break is upstream's, in Rust, before any of our code is involved -- the job log shows which target, and whatever archives did build are attached to the run below. The tracking branch (\`${BRANCH}\`) was still pushed and records the upstream SHA."
+          elif [ "$SYNC_RESULT" = "build-failure" ]; then
             result="build-failure"
             state_note="\`make library\` failed: the JNI bridge no longer compiles against the \`c2pa.h\` shipped with ${VERSION}, or a per-ABI \`libc2pa_c.so\` could not be extracted. This is the FFI-signature class of break and needs a Kotlin/JNI adaptation. The instrumented tests were not reached. The tracking branch (\`${BRANCH}\`) holds the failing state and can be checked out directly to debug."
+            if [ "$MODE" = "main" ]; then
+              state_note="${state_note} Rebuilding needs the self-built archives: either download the \`c2pa-archives-*\` artifact from the run below and pass it as \`C2PA_ARCHIVE_DIR\`, or run \`.github/scripts/build-c2pa-archives.sh\` against a c2pa-rs checkout at \`${UPSTREAM_SHA}\`."
+            fi
           elif [ "$SYNC_RESULT" = "failure" ]; then
             result="failure"
             state_note="The AAR built cleanly but the instrumented tests failed against ${VERSION}, so this is a behavioural change rather than an FFI-signature break. The tracking branch (\`${BRANCH}\`) holds the failing state and can be checked out directly to debug."
+            if [ "$MODE" = "main" ]; then
+              state_note="${state_note} Rebuilding needs the self-built archives: either download the \`c2pa-archives-*\` artifact from the run below and pass it as \`C2PA_ARCHIVE_DIR\`, or run \`.github/scripts/build-c2pa-archives.sh\` against a c2pa-rs checkout at \`${UPSTREAM_SHA}\`."
+            fi
           elif [ "$SYNC_RESULT" = "not-pushed" ]; then
             result="not-pushed"
             state_note="The AAR built and the tests **passed** against ${VERSION}, but the tracking branch was not updated (push failed or was rejected -- check push permissions and branch protection on \`${BRANCH}\`). The branch does **not** reflect what was tested; do not go looking for an upstream break here."
@@ -491,15 +604,28 @@ jobs:
             echo
             echo "| | |"
             echo "|---|---|"
-            echo "| Target version | \`${VERSION}\` |"
-            echo "| Previous version | \`${PREVIOUS_VERSION}\` |"
+            if [ "$MODE" = "main" ]; then
+              echo "| Upstream SHA | \`${UPSTREAM_SHA}\` |"
+              echo "| Previously tracked | \`${PREVIOUS_TARGET:-none}\` |"
+            else
+              echo "| Target version | \`${VERSION}\` |"
+              echo "| Previous version | \`${PREVIOUS_VERSION}\` |"
+            fi
             echo "| main SHA | \`${MAIN_SHA}\` |"
             echo "| Result | \`${result}\` |"
             echo
             echo "${state_note}"
             echo
             echo "Failed run: ${run_url}"
-            echo "Upstream release notes: ${release_url}"
+            if [ "$MODE" = "main" ]; then
+              if [ -n "$PREVIOUS_TARGET" ]; then
+                echo "Upstream changes since the previous sync: ${GITHUB_SERVER_URL}/${SOURCE_REPO}/compare/${PREVIOUS_TARGET#main@}...${UPSTREAM_SHA}"
+              else
+                echo "No previous run to compare against; this is the first sync of \`${BRANCH}\`."
+              fi
+            else
+              echo "Upstream release notes: ${GITHUB_SERVER_URL}/${SOURCE_REPO}/releases/tag/c2pa-${VERSION}"
+            fi
             echo
             echo "### Self-healing"
             echo
@@ -525,16 +651,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          MODE: ${{ inputs.mode }}
           BRANCH: ${{ inputs.branch }}
+          UPSTREAM_REF: ${{ inputs.upstream_ref }}
         run: |
           set -euo pipefail
           run_url="${GITHUB_SERVER_URL}/${REPO}/actions/runs/${GITHUB_RUN_ID}"
           {
             echo "The \`resolve\` job for \`${BRANCH}\` failed before it could determine a target version, so no build was attempted and the \`report\` job never ran."
             echo
-            echo "**Likely cause:** the asset preflight. Upstream added, renamed, or dropped an Android target archive on the release, so the release no longer carries every archive this repo expects. Bring the target list in \`.github/scripts/check-c2pa-assets.sh\` back in lockstep with the \`architectures\` map in \`library/build.gradle.kts\` -- the two must always change together."
-            echo
-            echo "**Other possibility:** a transient GitHub releases-API error (rate limit, timeout). This clears on its own on the next scheduled run; no action needed if it does not recur."
+            if [ "$MODE" = "main" ]; then
+              echo "**Likely cause:** the commits API could not resolve \`${UPSTREAM_REF}\` on the upstream repository -- a mistyped \`upstream_ref\` on a manual dispatch, or a transient GitHub API error (rate limit, timeout). The latter clears on its own on the next scheduled run."
+            else
+              echo "**Likely cause:** the asset preflight. Upstream added, renamed, or dropped an Android target archive on the release, so the release no longer carries every archive this repo expects. Bring the target list in \`.github/scripts/c2pa-android-targets.sh\` back in lockstep with the \`architectures\` map in \`library/build.gradle.kts\` -- the two must always change together."
+              echo
+              echo "**Other possibility:** a transient GitHub releases-API error (rate limit, timeout). This clears on its own on the next scheduled run; no action needed if it does not recur."
+            fi
             echo
             echo "Failed run: ${run_url}"
           } > "$RUNNER_TEMP/issue-body.md"

@@ -16,15 +16,12 @@ set -euo pipefail
 version="${1:-}"
 [ -n "$version" ] || { echo "usage: $0 vX.Y.Z[-rc.N]" >&2; exit 1; }
 
-# Kept in lockstep with the `architectures` map in library/build.gradle.kts,
-# whose values are the Rust target triples the download URL is built from. A
-# target added or renamed upstream must be reflected here.
-TARGETS="
-aarch64-linux-android
-armv7-linux-androideabi
-i686-linux-android
-x86_64-linux-android
-"
+# The four required Android targets live in c2pa-android-targets.sh, shared
+# with build-c2pa-archives.sh so the preflight and the self-built path cannot
+# drift from each other or from the `architectures` map in
+# library/build.gradle.kts.
+# shellcheck source=c2pa-android-targets.sh
+. "$(dirname "$0")/c2pa-android-targets.sh"
 
 # Read stdin exactly once so it can be validated before jq sees it. A
 # CI-scheduled fetch that failed outright (rate-limited, or a proxy's HTML
@@ -51,7 +48,7 @@ fi
 assets="$(printf '%s' "$raw_input" | jq -r '.assets[].name')"
 
 missing=""
-for target in $TARGETS; do
+for target in $C2PA_ANDROID_TARGETS; do
   expected="c2pa-${version}-${target}.zip"
   if ! printf '%s\n' "$assets" | grep -Fxq "$expected"; then
     missing="${missing}  ${expected}
@@ -65,4 +62,5 @@ if [ -n "$missing" ]; then
   exit 4
 fi
 
-echo "All 4 required target archives present for ${version}."
+count="$(printf '%s\n' "$C2PA_ANDROID_TARGETS" | grep -c .)"
+echo "All ${count} required target archives present for ${version}."
