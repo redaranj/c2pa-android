@@ -120,6 +120,10 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
+      # Cheap and toolchain-free, so it runs before the SDK setup below.
+      - name: Check C2PA target lists agree
+        run: .github/scripts/check-target-drift.sh
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
