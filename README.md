@@ -87,7 +87,7 @@ continues to serve the default version.
 
 ### Building documentation locally
 
-To build the selected releases, install Python 3.10 or newer, Git, the GitHub CLI
+To build the selected releases, install Bash 3.2 or newer, `jq`, Git, the GitHub CLI
 (`gh`), and the JDK and Android SDK required by those releases. Authenticate `gh`
 or set `GH_TOKEN` to a token with read access to the repository, then run:
 
@@ -111,8 +111,8 @@ after all selected releases build successfully.
 
 The existing `make docs` command still generates working-tree documentation in
 `build/docs/`; it does not replace the versioned site. Run `make docs-test` to test
-the versioning tooling and selector (Python 3.10+ and Node.js 18+; no Android SDK
-or JDK required for these unit tests).
+the versioning tooling and selector (Bash 3.2+, `jq`, Git, and Node.js 18+; no
+Python, Android SDK, or JDK required for these unit tests).
 
 ### Maintaining versions
 

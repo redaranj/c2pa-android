@@ -103,10 +103,10 @@ docs:
 
 # Generate API documentation from selected published releases
 docs-versioned:
-	python3 .github/scripts/generate_versioned_docs.py
+	bash .github/scripts/generate-versioned-docs.sh
 
 docs-test:
-	python3 -m unittest discover -s .github/scripts -p 'test_versioned_docs.py'
+	bash .github/scripts/test-versioned-docs.sh
 	node --test .github/scripts/test-doc-version-selector.cjs
 
 # Clean generated working-tree documentation
