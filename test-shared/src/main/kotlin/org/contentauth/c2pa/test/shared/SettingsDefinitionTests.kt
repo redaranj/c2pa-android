@@ -458,7 +458,8 @@ abstract class SettingsDefinitionTests : TestBase() {
             val restored = C2PASettingsDefinition.fromJson(json)
             check(restored == definition) { "Trust settings round-trip mismatch" }
 
-            // The native library validates the settings when they are applied.
+            // Checks that the native library accepts this shape. It ignores keys it does not
+            // know, so the key names themselves are pinned by testTrustAnchorsValidation.
             C2PASettings.fromDefinition(definition).use { settings ->
                 C2PAContext.fromSettings(settings).close()
             }
@@ -476,7 +477,7 @@ abstract class SettingsDefinitionTests : TestBase() {
 
             val state = C2PASettings.create().use { settings ->
                 settings.updateFromString(legacyJson, "json")
-                readValidationState(signed, settings)
+                readStore(signed, settings).optString("validation_state")
             }
             check(state == "Trusted") { "Legacy trust_anchors string was not applied: state $state" }
 
@@ -485,33 +486,79 @@ abstract class SettingsDefinitionTests : TestBase() {
     }
 
     /**
-     * Test that a trust anchor makes a signature trusted only for its own kind: the test root as
-     * a manifest anchor yields a trusted signing credential, the same root as a time-stamp
-     * authority anchor does not, and neither does an empty trust configuration.
+     * Test that trust settings change how a signed asset validates, which pins each key name
+     * against the native library:
+     * - an anchor applies to its own kind only (`trust_anchors`, `trust_kind`);
+     * - `trust_uri` is reported as the trust list that matched;
+     * - `allowed_list` trusts an end-entity certificate without any root;
+     * - `trust_config` and `use_default_ekus` decide which extended key usages are accepted.
      */
     suspend fun testTrustAnchorsValidation(): TestResult = runTest("Trust Anchors Validation") {
         withContext(Dispatchers.IO) {
             val roots = loadResourceAsString("test_cert_root_bundle")
+            val endMarker = "-----END CERTIFICATE-----"
+            val leafCert = loadResourceAsString("es256_certs").substringBefore(endMarker) + endMarker + "\n"
             val signed = signTestImage()
 
-            fun stateWith(trust: TrustSettings?): String? =
+            fun storeWith(trust: TrustSettings?): JSONObject =
                 C2PASettings.fromDefinition(C2PASettingsDefinition(version = 1, trust = trust)).use { settings ->
-                    readValidationState(signed, settings)
+                    readStore(signed, settings)
                 }
 
-            val manifestKind = stateWith(
-                TrustSettings(anchors = listOf(TrustAnchor(trustAnchors = roots, trustKind = TrustKind.MANIFEST))),
-            )
+            fun stateWith(trust: TrustSettings?): String = storeWith(trust).optString("validation_state")
+
+            val manifestAnchor = TrustAnchor(trustAnchors = roots, trustKind = TrustKind.MANIFEST)
+
+            // Kind separation.
+            val manifestKind = stateWith(TrustSettings(anchors = listOf(manifestAnchor)))
             val tsaKind = stateWith(
                 TrustSettings(anchors = listOf(TrustAnchor(trustAnchors = roots, trustKind = TrustKind.TSA))),
             )
             val noAnchors = stateWith(null)
-
             check(manifestKind == "Trusted") { "manifest anchor should be trusted, got $manifestKind" }
             check(tsaKind == "Valid") { "tsa anchor must not make a claim signer trusted, got $tsaKind" }
             check(noAnchors == "Valid") { "no anchors should leave the signer untrusted, got $noAnchors" }
 
-            TestResult("Trust Anchors Validation", true, "Trust anchors apply to their own kind only")
+            // The trust list URI is reported back.
+            val trustUri = "https://example.com/signers"
+            val reportedUri = storeWith(TrustSettings(anchors = listOf(manifestAnchor.copy(trustUri = trustUri))))
+                .optJSONObject("validation_results")
+                ?.optString("trustListUri")
+            check(reportedUri == trustUri) { "trust_uri should be reported as the trust list, got $reportedUri" }
+
+            // An allowed end-entity certificate is trusted without a root.
+            val allowedOnly = stateWith(
+                TrustSettings(
+                    anchors = listOf(
+                        TrustAnchor(trustAnchors = "", trustKind = TrustKind.MANIFEST, allowedList = leafCert),
+                    ),
+                ),
+            )
+            check(allowedOnly == "Trusted") { "allowed_list should trust the signing certificate, got $allowedOnly" }
+
+            // The test certificate's only extended key usage is emailProtection, a built-in one.
+            val unusedEku = "1.2.3.4"
+            val emailProtectionEku = "1.3.6.1.5.5.7.3.4"
+            val defaultsOffOtherEku = stateWith(
+                TrustSettings(anchors = listOf(manifestAnchor), trustConfig = unusedEku, useDefaultEkus = false),
+            )
+            val defaultsOnOtherEku = stateWith(
+                TrustSettings(anchors = listOf(manifestAnchor), trustConfig = unusedEku, useDefaultEkus = true),
+            )
+            val defaultsOffOwnEku = stateWith(
+                TrustSettings(
+                    anchors = listOf(manifestAnchor),
+                    trustConfig = emailProtectionEku,
+                    useDefaultEkus = false,
+                ),
+            )
+            check(defaultsOffOtherEku == "Invalid") {
+                "without the built-in EKUs an unlisted EKU must be rejected, got $defaultsOffOtherEku"
+            }
+            check(defaultsOnOtherEku == "Trusted") { "built-in EKUs should stay accepted, got $defaultsOnOtherEku" }
+            check(defaultsOffOwnEku == "Trusted") { "trust_config should accept its EKU, got $defaultsOffOwnEku" }
+
+            TestResult("Trust Anchors Validation", true, "Trust settings change validation as configured")
         }
     }
 
@@ -534,12 +581,12 @@ abstract class SettingsDefinitionTests : TestBase() {
         }
     }
 
-    /** Reads [asset] with a context built from [settings] and returns its `validation_state`. */
-    private fun readValidationState(asset: ByteArray, settings: C2PASettings): String? =
+    /** Reads [asset] with a context built from [settings] and returns the manifest store JSON. */
+    private fun readStore(asset: ByteArray, settings: C2PASettings): JSONObject =
         C2PAContext.fromSettings(settings).use { context ->
             ByteArrayStream(asset).use { stream ->
                 Reader.fromContext(context).withStream("image/jpeg", stream).use { reader ->
-                    JSONObject(reader.json()).optString("validation_state").ifEmpty { null }
+                    JSONObject(reader.json())
                 }
             }
         }
@@ -563,7 +610,9 @@ abstract class SettingsDefinitionTests : TestBase() {
 
             val json = definition.toJson()
             check("\"time_stamp_request_attempts\":5" in json) { "time_stamp_request_attempts missing" }
-            check("\"time_stamp_request_timeout_in_ms\":2000" in json) { "time_stamp_request_timeout_in_ms missing" }
+            check("\"time_stamp_request_timeout_in_ms\":2000" in json) {
+                "time_stamp_request_timeout_in_ms missing"
+            }
             check("\"time_stamp_retry_delay_in_ms\":0" in json) { "time_stamp_retry_delay_in_ms missing" }
             check("\"http_request_timeout_in_ms\":4000" in json) { "http_request_timeout_in_ms missing" }
             check("\"ocsp_fetch_should_override\":true" in json) { "ocsp_fetch_should_override missing" }
@@ -576,6 +625,7 @@ abstract class SettingsDefinitionTests : TestBase() {
             val rejected = listOf(
                 CoreSettings(timeStampRequestAttempts = 0) to "time_stamp_request_attempts",
                 CoreSettings(timeStampRequestTimeoutInMs = 0) to "time_stamp_request_timeout_in_ms",
+                CoreSettings(httpRequestTimeoutInMs = 0) to "http_request_timeout_in_ms",
             )
             for ((core, key) in rejected) {
                 val error = try {
