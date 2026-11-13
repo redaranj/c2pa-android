@@ -1384,7 +1384,8 @@ abstract class SignerTests : TestBase() {
                 val baseReserve = signer.reserveSize()
                 if (signer.withOcspResponse(first) !== signer) failures += "withOcspResponse did not return the signer"
                 if (signer.reserveSize() != baseReserve + first.size) {
-                    failures += "reserve after first staple is ${signer.reserveSize()}, expected ${baseReserve + first.size}"
+                    failures += "reserve after first staple is ${signer.reserveSize()}, " +
+                        "expected ${baseReserve + first.size}"
                 }
                 signer.withOcspResponse(second)
                 if (signer.reserveSize() != baseReserve + first.size + second.size) {
@@ -1441,7 +1442,11 @@ abstract class SignerTests : TestBase() {
             TestResult(
                 "Signer OCSP Stapling Empty Response",
                 failures.isEmpty(),
-                if (failures.isEmpty()) "A failed staple leaves the signer usable" else "Failed staple handling failures",
+                if (failures.isEmpty()) {
+                    "A failed staple leaves the signer usable"
+                } else {
+                    "Failed staple handling failures"
+                },
                 failures.joinToString("; "),
             )
         }
@@ -1481,13 +1486,17 @@ abstract class SignerTests : TestBase() {
             } finally {
                 signer.close()
             }
-            // A second close must be a no-op: the callback reference was released exactly once.
+            // Closing again must be a no-op.
             signer.close()
 
             TestResult(
                 "Callback Signer OCSP Stapling",
                 failures.isEmpty(),
-                if (failures.isEmpty()) "Callback signer signs with a stapled OCSP response" else "Callback stapling failures",
+                if (failures.isEmpty()) {
+                    "Callback signer signs with a stapled OCSP response"
+                } else {
+                    "Callback stapling failures"
+                },
                 failures.joinToString("; "),
             )
         }

@@ -553,9 +553,10 @@ make signing-server-run
 Any signer can carry stapled OCSP responses, so a validator can check the signing certificate's revocation status without a network request. Call `Signer.withOcspResponse()` once per certificate in the chain, signing certificate first:
 
 ```kotlin
-val signer = Signer.fromInfo(signerInfo)
-    .withOcspResponse(leafOcspResponse)
-    .withOcspResponse(intermediateOcspResponse)
+Signer.fromInfo(signerInfo).use { signer ->
+    signer.withOcspResponse(leafOcspResponse).withOcspResponse(intermediateOcspResponse)
+    builder.sign("image/jpeg", source, dest, signer)
+}
 ```
 
 The app fetches the DER-encoded responses and keeps them fresh; create a new signer when they are refreshed.

@@ -252,10 +252,15 @@ class Signer internal constructor(internal var ptr: Long) : Closeable {
      * a new signer when they are refreshed.
      *
      * ```kotlin
-     * val signer = Signer.fromInfo(signerInfo)
-     *     .withOcspResponse(leafResponse)
-     *     .withOcspResponse(intermediateResponse)
+     * Signer.fromInfo(signerInfo).use { signer ->
+     *     signer.withOcspResponse(leafResponse).withOcspResponse(intermediateResponse)
+     *     builder.sign("image/jpeg", source, dest, signer)
+     * }
      * ```
+     *
+     * Thread safety: a successful call replaces this signer's native handle and frees the
+     * previous one. Do not call it while another thread is signing with, or closing, the same
+     * signer. Staple the responses before the signer is shared.
      *
      * @param response A DER-encoded OCSP response. Must not be empty.
      * @return This signer for fluent chaining

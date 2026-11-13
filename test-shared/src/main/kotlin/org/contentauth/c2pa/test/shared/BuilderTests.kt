@@ -2336,7 +2336,11 @@ abstract class BuilderTests : TestBase() {
             TestResult(
                 "Builder Label",
                 failures.isEmpty(),
-                if (failures.isEmpty()) "Builder label is set, read back and used for the signed manifest" else "Builder label failures",
+                if (failures.isEmpty()) {
+                    "Builder label is set, read back and used for the signed manifest"
+                } else {
+                    "Builder label failures"
+                },
                 failures.joinToString("; "),
             )
         }

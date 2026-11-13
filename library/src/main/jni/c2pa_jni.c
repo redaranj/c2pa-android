@@ -1347,7 +1347,9 @@ JNIEXPORT jint JNICALL Java_org_contentauth_c2pa_Builder_labelNative(JNIEnv *env
         jbyteArray jlabel = cstring_to_jbytes(env, label);
         c2pa_free(label);
         if (jlabel == NULL) {
-            // Allocation failed; a Java exception is pending.
+            // The byte array could not be allocated. No Java exception is left
+            // pending, so record the cause for the Kotlin wrapper's C2PAError.
+            c2pa_error_set_last("Failed to allocate the label buffer");
             return -1;
         }
         (*env)->SetObjectArrayElement(env, out, 0, jlabel);
@@ -2004,9 +2006,11 @@ static void unregister_signer_context(struct C2paSigner *signer) {
 }
 
 // Detach all context nodes keyed by a signer from the registry and return them
-// as a chain. Called BEFORE c2pa_identity_signer_create, which frees the input
-// signer allocations even on failure: their addresses must not remain registry
-// keys, or a concurrent signer allocated at a recycled address would alias them.
+// as a chain. Called BEFORE an FFI call that consumes the signer
+// (c2pa_identity_signer_create, which frees its inputs even on failure, and
+// c2pa_signer_with_ocsp_response, which frees its input on success): a consumed
+// signer's address must not remain a registry key, or a concurrent signer
+// allocated at a recycled address would alias it.
 static SignerContextNode *detach_signer_contexts(struct C2paSigner *signer) {
     SignerContextNode *detached = NULL;
 
@@ -2027,8 +2031,9 @@ static SignerContextNode *detach_signer_contexts(struct C2paSigner *signer) {
     return detached;
 }
 
-// Re-insert detached context nodes keyed to the combined signer that now owns
-// the consumed inputs' callbacks, so they are freed when it is freed.
+// Re-insert detached context nodes keyed to the signer that now owns the
+// callbacks (the signer an FFI call returned, or the input it left alive), so
+// they are freed when that signer is freed.
 static void attach_signer_contexts(SignerContextNode *nodes, struct C2paSigner *signer) {
     if (nodes == NULL) {
         return;

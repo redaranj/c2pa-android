@@ -437,9 +437,12 @@ class Builder internal constructor(private var ptr: Long) : Closeable {
     /**
      * Sets the label of the manifest this builder produces.
      *
-     * The label must be a C2PA manifest URN of the form `urn:c2pa:<uuid>`. The form is checked
-     * when the manifest is signed, not here: signing fails for any other value. When no label
-     * is set, one is generated at signing.
+     * The label must be a C2PA manifest URN of the form `urn:c2pa:<uuid>`, in lower case, with
+     * a version 4 UUID. The form is checked when the manifest is signed, not here: signing
+     * fails for any other value. When no label is set, one is generated at signing.
+     *
+     * The label is part of the manifest definition, so call this after [withDefinition]; a
+     * later [withDefinition] replaces the definition and the label with it.
      *
      * @param label The manifest label
      * @return This builder for fluent chaining
