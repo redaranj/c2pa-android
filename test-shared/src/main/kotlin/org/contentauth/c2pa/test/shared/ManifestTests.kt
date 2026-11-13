@@ -60,6 +60,7 @@ import org.contentauth.c2pa.ByteArrayStream
 import org.contentauth.c2pa.C2PA
 import org.contentauth.c2pa.C2PAJson
 import org.contentauth.c2pa.FileStream
+import org.contentauth.c2pa.Reader
 import org.contentauth.c2pa.Signer
 import org.contentauth.c2pa.SignerInfo
 import org.contentauth.c2pa.SigningAlgorithm
@@ -827,7 +828,8 @@ abstract class ManifestTests : TestBase() {
                     )
                 }
 
-                if (full?.validationStatus?.firstOrNull()?.statusCode != ValidationStatusCode.CLAIM_SIGNATURE_VALIDATED) {
+                val fullStatusCode = full?.validationStatus?.firstOrNull()?.statusCode
+                if (fullStatusCode != ValidationStatusCode.CLAIM_SIGNATURE_VALIDATED) {
                     return@runTest TestResult(
                         "Ingredients",
                         false,
@@ -1344,8 +1346,12 @@ abstract class ManifestTests : TestBase() {
                 if (metadata?.dataSource?.type != "signer") failures += "dataSource"
                 if (metadata?.reviewRatings?.size != 1) failures += "reviewRatings"
                 if (metadata?.regionOfInterest?.name != "clip") failures += "regionOfInterest"
-                if (metadata?.reference?.url != "self#jumbf=c2pa.assertions/c2pa.actions.v2") failures += "reference"
-                if (action.related?.map { it.action } != listOf("c2pa.cropped", "c2pa.resized")) failures += "related"
+                if (metadata?.reference?.url != "self#jumbf=c2pa.assertions/c2pa.actions.v2") {
+                    failures += "reference"
+                }
+                if (action.related?.map { it.action } != listOf("c2pa.cropped", "c2pa.resized")) {
+                    failures += "related"
+                }
                 if (DigitalSourceType.TRAINED_ALGORITHMIC_DATA.toIptcUrl() !=
                     "http://c2pa.org/digitalsourcetype/trainedAlgorithmicData"
                 ) {
@@ -1384,6 +1390,102 @@ abstract class ManifestTests : TestBase() {
                     e.stackTraceToString(),
                 )
             }
+        }
+    }
+
+    /**
+     * Tests that the ingredient, metadata and validation result models are accepted by the
+     * native library when a manifest is signed, and that the signed manifest's ingredient
+     * decodes back into the same models.
+     */
+    suspend fun testIngredientModelsThroughBuilder(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Ingredient Models Through Builder") {
+            val noCodes = StatusCodes(success = emptyList(), informational = emptyList(), failure = emptyList())
+            val ingredient = Ingredient(
+                title = "Source",
+                format = "image/jpeg",
+                relationship = Relationship.COMPONENT_OF,
+                informationalUri = "https://example.com/info",
+                validationStatus = listOf(ValidationStatus(code = "com.example.future.code")),
+                validationResults = ValidationResults(
+                    activeManifest = noCodes,
+                    ingredientDeltas = listOf(
+                        IngredientDeltaValidationResult(
+                            ingredientAssertionUri = "self#jumbf=c2pa.assertions/c2pa.ingredient.v3",
+                            validationDeltas = noCodes,
+                        ),
+                    ),
+                ),
+                metadata = Metadata(
+                    dataSource = DataSource(type = "signer"),
+                    regionOfInterest = RegionOfInterest(
+                        region = listOf(RegionRange(type = RangeType.FRAME)),
+                        name = "clip",
+                    ),
+                    reviewRatings = listOf(ReviewRating(explanation = "checked", value = 5)),
+                    dateTime = "2026-01-02T03:04:05Z",
+                ),
+            )
+            val manifest = ManifestDefinition(
+                title = "Ingredient Models",
+                claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "C2PA Android Test", version = "1.0.0")),
+                assertions = listOf(
+                    AssertionDefinition.actions(
+                        listOf(
+                            ActionAssertion(
+                                action = PredefinedAction.CREATED,
+                                digitalSourceType = DigitalSourceType.DIGITAL_CAPTURE,
+                            ),
+                        ),
+                    ),
+                ),
+                ingredients = listOf(ingredient),
+            )
+            val signerInfo = SignerInfo(
+                SigningAlgorithm.ES256,
+                loadResourceAsString("es256_certs"),
+                loadResourceAsString("es256_private"),
+            )
+
+            val signed = Builder.fromJson(manifest.toJson()).use { builder ->
+                ByteArrayStream(loadResourceAsBytes("pexels_asadphoto_457882")).use { source ->
+                    ByteArrayStream().use { dest ->
+                        Signer.fromInfo(signerInfo).use { signer ->
+                            builder.sign("image/jpeg", source, dest, signer)
+                        }
+                        dest.getData()
+                    }
+                }
+            }
+
+            val store = ByteArrayStream(signed).use { stream ->
+                Reader.fromStream("image/jpeg", stream).use { reader -> JSONObject(reader.json()) }
+            }
+            val readIngredientJson = store.getJSONObject("manifests")
+                .getJSONObject(store.getString("active_manifest"))
+                .getJSONArray("ingredients")
+                .getJSONObject(0)
+                .toString()
+            val read = C2PAJson.default.decodeFromString(Ingredient.serializer(), readIngredientJson)
+
+            val failures = mutableListOf<String>()
+            if (read.informationalUri != ingredient.informationalUri) failures += "informationalUri"
+            if (read.validationResults?.activeManifest == null) failures += "validationResults.activeManifest"
+            if (read.metadata?.dateTime != "2026-01-02T03:04:05Z") failures += "metadata.dateTime"
+            if (read.metadata?.dataSource?.type != "signer") failures += "metadata.dataSource"
+            if (read.metadata?.reviewRatings?.firstOrNull()?.value != 5) failures += "metadata.reviewRatings"
+            if (read.metadata?.regionOfInterest?.name != "clip") failures += "metadata.regionOfInterest"
+
+            TestResult(
+                "Ingredient Models Through Builder",
+                failures.isEmpty(),
+                if (failures.isEmpty()) {
+                    "Ingredient models are accepted when signing and decode from the signed manifest"
+                } else {
+                    "Fields lost through the native library: $failures"
+                },
+                readIngredientJson,
+            )
         }
     }
 

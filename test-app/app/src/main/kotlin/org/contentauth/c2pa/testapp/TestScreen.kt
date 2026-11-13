@@ -279,6 +279,7 @@ private suspend fun runAllTests(context: Context): List<TestResult> = withContex
     results.add(manifestTests.testAllValidationStatusCodes())
     results.add(manifestTests.testUnknownValidationStatusCode())
     results.add(manifestTests.testUpstreamSerializedNames())
+    results.add(manifestTests.testIngredientModelsThroughBuilder())
     results.add(manifestTests.testAllDigitalSourceTypes())
     results.add(manifestTests.testAssertionsWithBuilder())
     results.add(manifestTests.testCustomGatheredAssertionWithBuilder())

@@ -131,8 +131,8 @@ data class TrustSettings(
  * @property trustAnchors The root certificates, PEM encoded.
  * @property trustKind What the anchors are trusted for.
  * @property trustUri An identifier for this trust list. One is generated when omitted.
- * @property trustConfig Extended key usage OIDs accepted for certificates under these anchors,
- *   one per line. Applied on top of [TrustSettings.trustConfig].
+ * @property trustConfig Extended key usage OIDs for certificates under these anchors, one per
+ *   line. For [TrustKind.CAWG] anchors this replaces [TrustSettings.trustConfig].
  * @property allowedList End-entity certificates that are trusted directly, as a PEM bundle.
  * @property trustedIcaIssuers Issuer DIDs trusted for CAWG identity claims aggregation
  *   credentials. No issuer is trusted when the list is empty or omitted.
