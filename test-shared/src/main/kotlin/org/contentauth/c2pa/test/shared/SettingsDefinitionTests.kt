@@ -610,7 +610,9 @@ abstract class SettingsDefinitionTests : TestBase() {
 
             val json = definition.toJson()
             check("\"time_stamp_request_attempts\":5" in json) { "time_stamp_request_attempts missing" }
-            check("\"time_stamp_request_timeout_in_ms\":2000" in json) { "time_stamp_request_timeout_in_ms missing" }
+            check("\"time_stamp_request_timeout_in_ms\":2000" in json) {
+                "time_stamp_request_timeout_in_ms missing"
+            }
             check("\"time_stamp_retry_delay_in_ms\":0" in json) { "time_stamp_retry_delay_in_ms missing" }
             check("\"http_request_timeout_in_ms\":4000" in json) { "http_request_timeout_in_ms missing" }
             check("\"ocsp_fetch_should_override\":true" in json) { "ocsp_fetch_should_override missing" }
@@ -623,6 +625,7 @@ abstract class SettingsDefinitionTests : TestBase() {
             val rejected = listOf(
                 CoreSettings(timeStampRequestAttempts = 0) to "time_stamp_request_attempts",
                 CoreSettings(timeStampRequestTimeoutInMs = 0) to "time_stamp_request_timeout_in_ms",
+                CoreSettings(httpRequestTimeoutInMs = 0) to "http_request_timeout_in_ms",
             )
             for ((core, key) in rejected) {
                 val error = try {
