@@ -160,6 +160,12 @@ class AndroidManifestTests : ManifestTests() {
     }
 
     @Test
+    fun runTestIngredientModelsThroughBuilder() = runBlocking {
+        val result = testIngredientModelsThroughBuilder()
+        assertTrue(result.success, "Ingredient Models Through Builder test failed: ${result.message}")
+    }
+
+    @Test
     fun runTestAllDigitalSourceTypes() = runBlocking {
         val result = testAllDigitalSourceTypes()
         assertTrue(result.success, "All Digital Source Types test failed: ${result.message}")
