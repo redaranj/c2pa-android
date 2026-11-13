@@ -14,7 +14,14 @@ package org.contentauth.c2pa.test.shared
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.contentauth.c2pa.Builder
+import org.contentauth.c2pa.ByteArrayStream
+import org.contentauth.c2pa.C2PAContext
 import org.contentauth.c2pa.C2PASettings
+import org.contentauth.c2pa.Reader
+import org.contentauth.c2pa.Signer
+import org.contentauth.c2pa.SignerInfo
+import org.contentauth.c2pa.SigningAlgorithm
 import org.contentauth.c2pa.settings.ActionTemplateSettings
 import org.contentauth.c2pa.settings.ActionsSettings
 import org.contentauth.c2pa.settings.AutoActionSettings
@@ -30,8 +37,11 @@ import org.contentauth.c2pa.settings.ThumbnailQuality
 import org.contentauth.c2pa.settings.ThumbnailSettings
 import org.contentauth.c2pa.settings.TimeStampFetchScope
 import org.contentauth.c2pa.settings.TimeStampSettings
+import org.contentauth.c2pa.settings.TrustAnchor
+import org.contentauth.c2pa.settings.TrustKind
 import org.contentauth.c2pa.settings.TrustSettings
 import org.contentauth.c2pa.settings.VerifySettings
+import org.json.JSONObject
 
 /**
  * Tests for [C2PASettingsDefinition] serialization and integration with [C2PASettings].
@@ -82,8 +92,10 @@ abstract class SettingsDefinitionTests : TestBase() {
                 {
                     "version": 1,
                     "trust": {
-                        "verify_trust_list": false,
-                        "user_anchors": "some-anchors"
+                        "anchors": [
+                            {"trust_anchors": "some-anchors", "trust_kind": "manifest"}
+                        ],
+                        "use_default_ekus": false
                     },
                     "verify": {
                         "verify_after_reading": true,
@@ -95,8 +107,9 @@ abstract class SettingsDefinitionTests : TestBase() {
             val definition = C2PASettingsDefinition.fromJson(json)
 
             check(definition.version == 1) { "Version mismatch" }
-            check(definition.trust?.verifyTrustList == false) { "verifyTrustList mismatch" }
-            check(definition.trust?.userAnchors == "some-anchors") { "userAnchors mismatch" }
+            check(definition.trust?.useDefaultEkus == false) { "useDefaultEkus mismatch" }
+            check(definition.trust?.anchors?.single()?.trustAnchors == "some-anchors") { "trustAnchors mismatch" }
+            check(definition.trust?.anchors?.single()?.trustKind == TrustKind.MANIFEST) { "trustKind mismatch" }
             check(definition.verify?.verifyAfterReading == true) { "verifyAfterReading mismatch" }
             check(definition.verify?.ocspFetch == false) { "ocspFetch mismatch" }
 
@@ -157,7 +170,7 @@ abstract class SettingsDefinitionTests : TestBase() {
         withContext(Dispatchers.IO) {
             val definition = C2PASettingsDefinition(
                 version = 1,
-                trust = TrustSettings(verifyTrustList = true),
+                trust = TrustSettings(useDefaultEkus = true),
                 core = CoreSettings(
                     backingStoreMemoryThresholdInMb = 256,
                     allowedNetworkHosts = listOf("*.example.com"),
@@ -182,7 +195,7 @@ abstract class SettingsDefinitionTests : TestBase() {
             val json = definition.toJson()
 
             check("\"version\":1" in json) { "Version missing from JSON" }
-            check("\"verify_trust_list\":true" in json) { "verify_trust_list missing" }
+            check("\"use_default_ekus\":true" in json) { "use_default_ekus missing" }
             check("\"backing_store_memory_threshold_in_mb\":256" in json) {
                 "backing_store threshold missing"
             }
@@ -398,6 +411,137 @@ abstract class SettingsDefinitionTests : TestBase() {
             TestResult("C2PASettings.updateFrom", true, "updateFrom applies definition to existing settings")
         }
     }
+
+    /** Test that trust anchors of every kind serialize under the c2pa-rs names and load natively. */
+    suspend fun testTrustAnchorsRoundTrip(): TestResult = runTest("Trust Anchors Round Trip") {
+        withContext(Dispatchers.IO) {
+            val roots = loadResourceAsString("test_cert_root_bundle")
+            val definition = C2PASettingsDefinition(
+                version = 1,
+                trust = TrustSettings(
+                    anchors = listOf(
+                        TrustAnchor(
+                            trustAnchors = roots,
+                            trustKind = TrustKind.MANIFEST,
+                            trustUri = "https://example.com/signers",
+                            trustConfig = "1.3.6.1.5.5.7.3.36",
+                            allowedList = VALID_CERT,
+                        ),
+                        TrustAnchor(trustAnchors = roots, trustKind = TrustKind.TSA),
+                        TrustAnchor(
+                            trustAnchors = roots,
+                            trustKind = TrustKind.CAWG,
+                            trustedIcaIssuers = listOf("did:web:issuer.example.com"),
+                        ),
+                    ),
+                    trustConfig = "1.3.6.1.5.5.7.3.4",
+                    useDefaultEkus = true,
+                ),
+            )
+
+            val json = definition.toJson()
+            val expectedKeys = listOf(
+                "anchors", "trust_anchors", "trust_uri", "trust_kind", "trust_config", "allowed_list",
+                "trusted_ica_issuers", "use_default_ekus",
+            )
+            for (key in expectedKeys) {
+                check("\"$key\":" in json) { "$key missing from JSON" }
+            }
+            for (kind in listOf("manifest", "tsa", "cawg")) {
+                check("\"trust_kind\":\"$kind\"" in json) { "trust_kind $kind missing from JSON" }
+            }
+            for (staleKey in listOf("cawg_trust", "verify_trust_list", "user_anchors")) {
+                check("\"$staleKey\"" !in json) { "stale key $staleKey present in JSON" }
+            }
+
+            val restored = C2PASettingsDefinition.fromJson(json)
+            check(restored == definition) { "Trust settings round-trip mismatch" }
+
+            // The native library validates the settings when they are applied.
+            C2PASettings.fromDefinition(definition).use { settings ->
+                C2PAContext.fromSettings(settings).close()
+            }
+
+            TestResult("Trust Anchors Round Trip", true, "Trust anchors of every kind serialize and load")
+        }
+    }
+
+    /** Test that settings in the flat trust shape still load when passed as a raw string. */
+    suspend fun testLegacyTrustStringStillLoads(): TestResult = runTest("Legacy Trust String") {
+        withContext(Dispatchers.IO) {
+            val roots = loadResourceAsString("test_cert_root_bundle")
+            val legacyJson = JSONObject().put("trust", JSONObject().put("trust_anchors", roots)).toString()
+            val signed = signTestImage()
+
+            val state = C2PASettings.create().use { settings ->
+                settings.updateFromString(legacyJson, "json")
+                readValidationState(signed, settings)
+            }
+            check(state == "Trusted") { "Legacy trust_anchors string was not applied: state $state" }
+
+            TestResult("Legacy Trust String", true, "The flat trust shape still loads from a raw string")
+        }
+    }
+
+    /**
+     * Test that a trust anchor makes a signature trusted only for its own kind: the test root as
+     * a manifest anchor yields a trusted signing credential, the same root as a time-stamp
+     * authority anchor does not, and neither does an empty trust configuration.
+     */
+    suspend fun testTrustAnchorsValidation(): TestResult = runTest("Trust Anchors Validation") {
+        withContext(Dispatchers.IO) {
+            val roots = loadResourceAsString("test_cert_root_bundle")
+            val signed = signTestImage()
+
+            fun stateWith(trust: TrustSettings?): String? =
+                C2PASettings.fromDefinition(C2PASettingsDefinition(version = 1, trust = trust)).use { settings ->
+                    readValidationState(signed, settings)
+                }
+
+            val manifestKind = stateWith(
+                TrustSettings(anchors = listOf(TrustAnchor(trustAnchors = roots, trustKind = TrustKind.MANIFEST))),
+            )
+            val tsaKind = stateWith(
+                TrustSettings(anchors = listOf(TrustAnchor(trustAnchors = roots, trustKind = TrustKind.TSA))),
+            )
+            val noAnchors = stateWith(null)
+
+            check(manifestKind == "Trusted") { "manifest anchor should be trusted, got $manifestKind" }
+            check(tsaKind == "Valid") { "tsa anchor must not make a claim signer trusted, got $tsaKind" }
+            check(noAnchors == "Valid") { "no anchors should leave the signer untrusted, got $noAnchors" }
+
+            TestResult("Trust Anchors Validation", true, "Trust anchors apply to their own kind only")
+        }
+    }
+
+    /** Signs the shared test image with the ES256 test certificate and returns the signed bytes. */
+    private fun signTestImage(): ByteArray {
+        val signerInfo = SignerInfo(
+            SigningAlgorithm.ES256,
+            loadResourceAsString("es256_certs"),
+            loadResourceAsString("es256_private"),
+        )
+        return Builder.fromJson(TEST_MANIFEST_JSON).use { builder ->
+            ByteArrayStream(loadResourceAsBytes("pexels_asadphoto_457882")).use { source ->
+                ByteArrayStream().use { dest ->
+                    Signer.fromInfo(signerInfo).use { signer ->
+                        builder.sign("image/jpeg", source, dest, signer)
+                    }
+                    dest.getData()
+                }
+            }
+        }
+    }
+
+    /** Reads [asset] with a context built from [settings] and returns its `validation_state`. */
+    private fun readValidationState(asset: ByteArray, settings: C2PASettings): String? =
+        C2PAContext.fromSettings(settings).use { context ->
+            ByteArrayStream(asset).use { stream ->
+                Reader.fromContext(context).withStream("image/jpeg", stream).use { reader ->
+                    JSONObject(reader.json()).optString("validation_state").ifEmpty { null }
+                }
+            }
+        }
 
     /** Test pretty JSON output. */
     suspend fun testPrettyJson(): TestResult = runTest("Settings Definition Pretty JSON") {
