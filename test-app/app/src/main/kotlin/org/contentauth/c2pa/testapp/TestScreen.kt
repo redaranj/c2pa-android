@@ -269,6 +269,7 @@ private suspend fun runAllTests(context: Context): List<TestResult> = withContex
     results.add(manifestTests.testRegionOfInterest())
     results.add(manifestTests.testResourceRef())
     results.add(manifestTests.testHashedUri())
+    results.add(manifestTests.testHashedUriThroughBuilder())
     results.add(manifestTests.testUriOrResource())
     results.add(manifestTests.testMassInit())
     results.add(manifestTests.testManifestToJson())

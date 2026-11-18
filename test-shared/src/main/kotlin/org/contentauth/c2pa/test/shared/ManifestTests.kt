@@ -53,6 +53,7 @@ import org.contentauth.c2pa.manifest.Relationship
 import org.contentauth.c2pa.manifest.TrainingMiningEntry
 import org.contentauth.c2pa.manifest.CawgTrainingMiningEntry
 import org.contentauth.c2pa.manifest.ManifestValidator
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import org.contentauth.c2pa.Builder
@@ -301,28 +302,128 @@ abstract class ManifestTests : TestBase() {
     }
 
     /**
-     * Tests HashedUri equality.
+     * Tests HashedUri: equality follows the hash bytes, the hash is written as an array of byte
+     * values, and it is read from that array or from the `b64'...'` notation c2pa-rs reports.
      */
     suspend fun testHashedUri(): TestResult = withContext(Dispatchers.IO) {
         runTest("Manifest HashedUri") {
-            val hu1 = HashedUri(hash = "", url = "foo")
-            val hu2 = HashedUri(hash = "", url = "foo")
+            val hash = byteArrayOf(1, 2, -1)
+            val hashedUri = HashedUri(url = "self#jumbf=c2pa.assertions/c2pa.actions.v2", hash = hash)
+            val failures = mutableListOf<String>()
 
-            if (hu1 == hu2) {
-                TestResult(
-                    "Manifest HashedUri",
-                    true,
-                    "HashedUris equal",
-                    "HashedUri: $hu1",
-                )
-            } else {
-                TestResult(
-                    "Manifest HashedUri",
-                    false,
-                    "HashedUris unexpectedly unequal",
-                    "hu1: $hu1, hu2: $hu2",
-                )
+            if (hashedUri != HashedUri(url = hashedUri.url, hash = hash.copyOf())) failures += "equal content differs"
+            if (hashedUri.hashCode() != hashedUri.copy(hash = hash.copyOf()).hashCode()) failures += "hashCode differs"
+            if (hashedUri == hashedUri.copy(hash = byteArrayOf(1, 2, 3))) failures += "different hashes are equal"
+
+            val encoded = C2PAJson.default.encodeToString(HashedUri.serializer(), hashedUri)
+            if (!encoded.contains("\"hash\":[1,2,255]")) failures += "hash not written as byte values: $encoded"
+
+            val fromArray = C2PAJson.default.decodeFromString(HashedUri.serializer(), encoded)
+            val fromNotation = C2PAJson.default.decodeFromString(
+                HashedUri.serializer(),
+                """{"url": "${hashedUri.url}", "hash": "b64'AQL/'"}""",
+            )
+            if (fromArray != hashedUri) failures += "array form did not round-trip"
+            if (fromNotation != hashedUri) failures += "b64 notation did not decode to the same bytes"
+
+            val rejected = listOf(
+                """{"url": "u", "hash": "AQL/"}""",
+                """{"url": "u", "hash": "b64'not base64!'"}""",
+                """{"url": "u", "hash": [1, 256]}""",
+                """{"url": "u", "hash": ["1"]}""",
+            )
+            for (json in rejected) {
+                try {
+                    C2PAJson.default.decodeFromString(HashedUri.serializer(), json)
+                    failures += "accepted $json"
+                } catch (e: SerializationException) {
+                    // expected
+                }
             }
+
+            TestResult(
+                "Manifest HashedUri",
+                failures.isEmpty(),
+                if (failures.isEmpty()) "HashedUri compares and serializes its hash as bytes" else "HashedUri failures",
+                failures.joinToString("; "),
+            )
+        }
+    }
+
+    /**
+     * Tests that a hash set on a HashedUri reaches the native library as the same bytes: a
+     * manifest whose ingredient metadata references an assertion is signed, and the reference
+     * read back from the signed manifest carries the original hash.
+     */
+    suspend fun testHashedUriThroughBuilder(): TestResult = withContext(Dispatchers.IO) {
+        runTest("HashedUri Through Builder") {
+            val reference = HashedUri(
+                url = "self#jumbf=c2pa.assertions/c2pa.actions.v2",
+                hash = byteArrayOf(1, 2, 3, -128, -1),
+            )
+            val manifest = ManifestDefinition(
+                title = "HashedUri",
+                claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "C2PA Android Test", version = "1.0.0")),
+                assertions = listOf(
+                    AssertionDefinition.actions(
+                        listOf(
+                            ActionAssertion(
+                                action = PredefinedAction.CREATED,
+                                digitalSourceType = DigitalSourceType.DIGITAL_CAPTURE,
+                            ),
+                        ),
+                    ),
+                ),
+                ingredients = listOf(
+                    Ingredient(
+                        title = "Source",
+                        format = "image/jpeg",
+                        relationship = Relationship.COMPONENT_OF,
+                        metadata = Metadata(reference = reference),
+                    ),
+                ),
+            )
+            val signerInfo = SignerInfo(
+                SigningAlgorithm.ES256,
+                loadResourceAsString("es256_certs"),
+                loadResourceAsString("es256_private"),
+            )
+
+            val signed = Builder.fromJson(manifest.toJson()).use { builder ->
+                ByteArrayStream(loadResourceAsBytes("pexels_asadphoto_457882")).use { source ->
+                    ByteArrayStream().use { dest ->
+                        Signer.fromInfo(signerInfo).use { signer ->
+                            builder.sign("image/jpeg", source, dest, signer)
+                        }
+                        dest.getData()
+                    }
+                }
+            }
+
+            val store = ByteArrayStream(signed).use { stream ->
+                Reader.fromStream("image/jpeg", stream).use { reader -> JSONObject(reader.json()) }
+            }
+            val readIngredientJson = store.getJSONObject("manifests")
+                .getJSONObject(store.getString("active_manifest"))
+                .getJSONArray("ingredients")
+                .getJSONObject(0)
+                .toString()
+            val readReference = C2PAJson.default
+                .decodeFromString(Ingredient.serializer(), readIngredientJson)
+                .metadata
+                ?.reference
+
+            val success = readReference == reference
+            TestResult(
+                "HashedUri Through Builder",
+                success,
+                if (success) {
+                    "The hash read from the signed manifest matches the bytes that were set"
+                } else {
+                    "Hash changed through the native library: expected $reference, got $readReference"
+                },
+                readIngredientJson,
+            )
         }
     }
 
@@ -1316,7 +1417,7 @@ abstract class ManifestTests : TestBase() {
                             "dataSource": {"type": "signer"},
                             "reviewRatings": [{"explanation": "checked", "value": 5}],
                             "regionOfInterest": $region,
-                            "reference": {"url": "self#jumbf=c2pa.assertions/c2pa.actions.v2", "hash": "aGFzaA=="},
+                            "reference": {"url": "self#jumbf=c2pa.assertions/c2pa.actions.v2", "hash": "b64'aGFzaA=='"},
                             "localizations": []
                         },
                         "not_modelled": true
