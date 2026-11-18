@@ -76,6 +76,12 @@ class AndroidManifestTests : ManifestTests() {
     }
 
     @Test
+    fun runTestHashedUriThroughBuilder() = runBlocking {
+        val result = testHashedUriThroughBuilder()
+        assertTrue(result.success, "HashedUri Through Builder test failed: ${result.message}")
+    }
+
+    @Test
     fun runTestUriOrResource() = runBlocking {
         val result = testUriOrResource()
         assertTrue(result.success, "UriOrResource test failed: ${result.message}")
