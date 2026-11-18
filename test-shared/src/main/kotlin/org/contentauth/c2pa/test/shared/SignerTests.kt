@@ -1571,8 +1571,9 @@ abstract class SignerTests : TestBase() {
             if (signedSize <= 0 || calls.get() == 0) {
                 failures += "context signer did not sign (size $signedSize, calls ${calls.get()})"
             }
-            Runtime.getRuntime().gc()
-            if (callbackRef.get() == null) failures += "callback was released while the context was open"
+            // The same bounded wait that must see the callback collected after close must not see
+            // it collected before: that is what shows the wait can tell the two states apart.
+            if (isCollected(callbackRef)) failures += "callback was released while the context was open"
             context.close()
             if (!isCollected(callbackRef)) failures += "callback still reachable after the context was closed"
 
