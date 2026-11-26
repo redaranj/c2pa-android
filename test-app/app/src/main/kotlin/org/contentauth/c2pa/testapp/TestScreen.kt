@@ -270,6 +270,8 @@ private suspend fun runAllTests(context: Context): List<TestResult> = withContex
     results.add(streamTests.testByteArrayStreamBufferGrowth())
     results.add(streamTests.testStreamReleaseFreesContext())
     results.add(streamTests.testLargeBufferHandling())
+    results.add(streamTests.testLargeAssetStreamChunking())
+    results.add(streamTests.testOverreportingStreamFails())
 
     // Manifest Tests
     val manifestTests = AppManifestTests(context)

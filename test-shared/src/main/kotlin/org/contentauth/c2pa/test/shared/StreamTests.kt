@@ -24,10 +24,15 @@ import org.contentauth.c2pa.FileStream
 import org.contentauth.c2pa.Reader
 import org.contentauth.c2pa.SeekMode
 import org.contentauth.c2pa.Stream
+import org.contentauth.c2pa.Signer
+import org.contentauth.c2pa.SignerInfo
+import org.contentauth.c2pa.SigningAlgorithm
 import java.io.ByteArrayOutputStream
+import java.io.Closeable
 import java.io.File
 import java.io.IOException
 import java.lang.ref.WeakReference
+import java.io.RandomAccessFile
 
 /** StreamTests - Stream operations and I/O tests */
 abstract class StreamTests : TestBase() {
@@ -505,5 +510,304 @@ abstract class StreamTests : TestBase() {
                 )
             }
         }
+    }
+
+    suspend fun testLargeAssetStreamChunking(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Large Asset Stream Chunking") {
+            chunkingTest("Large Asset Stream Chunking", LARGE_ASSET_BYTES)
+        }
+    }
+
+    /**
+     * Tests that a stream reporting more bytes than it was asked for fails the operation with
+     * [C2PAError], in both directions. Passing an inflated read count through would have the core
+     * index past the end of its own buffer, which aborts the process.
+     */
+    suspend fun testOverreportingStreamFails(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Overreporting Stream Fails") {
+            val failures = mutableListOf<String>()
+            val details = StringBuilder()
+
+            // Reads copy honestly but claim one byte more than was asked for.
+            val readThrown = ByteArrayStream(loadResourceAsBytes("adobe_20220124_ci")).use { inner ->
+                CallbackStream(
+                    reader = { buf, length ->
+                        val n = inner.read(buf, length.toLong()).toInt()
+                        if (n > 0) length + 1 else n
+                    },
+                    seeker = { offset, mode -> inner.seek(offset, mode.value) },
+                ).use { stream ->
+                    try {
+                        Reader.fromStream("image/jpeg", stream).close()
+                        null
+                    } catch (e: Exception) {
+                        e
+                    }
+                }
+            }
+            details.append("read: $readThrown; ")
+            if (readThrown !is C2PAError) failures += "over-reported read: expected C2PAError, got $readThrown"
+
+            // Writes store honestly but claim one byte more than they were given.
+            val certPem = loadResourceAsString("es256_certs")
+            val keyPem = loadResourceAsString("es256_private")
+            val writeThrown = ByteArrayStream().use { inner ->
+                CallbackStream(
+                    reader = { buf, length -> inner.read(buf, length.toLong()).toInt() },
+                    seeker = { offset, mode -> inner.seek(offset, mode.value) },
+                    writer = { data, length ->
+                        inner.write(data, length.toLong())
+                        length + 1
+                    },
+                    flusher = { 0 },
+                ).use { dest ->
+                    ByteArrayStream(loadResourceAsBytes("pexels_asadphoto_457882")).use { source ->
+                        Builder.fromJson(TEST_MANIFEST_JSON).use { builder ->
+                            Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)).use { signer ->
+                                try {
+                                    builder.sign("image/jpeg", source, dest, signer)
+                                    null
+                                } catch (e: Exception) {
+                                    e
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            details.append("write: $writeThrown")
+            if (writeThrown !is C2PAError) failures += "over-reported write: expected C2PAError, got $writeThrown"
+
+            TestResult(
+                "Overreporting Stream Fails",
+                failures.isEmpty(),
+                if (failures.isEmpty()) {
+                    "Over-reported reads and writes fail with C2PAError"
+                } else {
+                    "Over-reported counts not rejected: $failures"
+                },
+                details.toString(),
+            )
+        }
+    }
+
+    /**
+     * Signs and then verifies a synthetic asset of [assetBytes], asserting that the JNI bridge
+     * never asks a stream callback for more than [STREAM_CHUNK_BYTES] at a time.
+     *
+     * The bridge used to mirror the core's request size into a Java array. The core reads a hash
+     * range in calls of up to 16 MiB and writes a JPEG's entropy-coded data in one call, so peak
+     * Java heap followed those sizes. This fails against that behaviour: the observed requests
+     * would be far larger than one chunk.
+     */
+    private fun chunkingTest(name: String, assetBytes: Long): TestResult {
+        val sourceJpeg = loadResourceAsBytes("pexels_asadphoto_457882")
+        val source = File(getContext().cacheDir, "chunking_source_$assetBytes.jpg")
+        val signed = File(getContext().cacheDir, "chunking_signed_$assetBytes.jpg")
+
+        try {
+            writeInflatedJpeg(sourceJpeg, assetBytes, source)
+
+            // Guard against a fixture too small to exercise chunking, which would let the
+            // assertions below pass without proving anything.
+            if (source.length() <= STREAM_CHUNK_BYTES) {
+                return TestResult(
+                    name,
+                    false,
+                    "Fixture is not larger than the chunk size, so the test proves nothing",
+                    "Fixture: ${source.length()} bytes, chunk: $STREAM_CHUNK_BYTES bytes",
+                )
+            }
+
+            val signObserver = ChunkObserver()
+            val certPem = loadResourceAsString("es256_certs")
+            val keyPem = loadResourceAsString("es256_private")
+
+            Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem)).use { signer ->
+                Builder.fromJson(TEST_MANIFEST_JSON).use { builder ->
+                    RecordingFileStream(source, "r", signObserver).use { src ->
+                        RecordingFileStream(signed, "rw", signObserver).use { dest ->
+                            builder.sign("image/jpeg", src.stream, dest.stream, signer)
+                        }
+                    }
+                }
+            }
+
+            val readObserver = ChunkObserver()
+            val manifestJson = RecordingFileStream(signed, "r", readObserver).use { stream ->
+                Reader.fromStream("image/jpeg", stream.stream).use { reader -> reader.json() }
+            }
+
+            val observers = listOf(signObserver, readObserver)
+            val maxRead = observers.maxOf { it.maxReadCount }
+            val maxWrite = observers.maxOf { it.maxWriteCount }
+            val mismatches = observers.sumOf { it.bufferSizeMismatches }
+
+            val details = buildString {
+                append("Asset: ${source.length()} bytes, chunk cap: $STREAM_CHUNK_BYTES bytes. ")
+                append("Largest read: $maxRead, largest write: $maxWrite. ")
+                append("Sign calls: ${signObserver.readCalls} read / ${signObserver.writeCalls} write, ")
+                append("verify calls: ${readObserver.readCalls} read. ")
+                append("Buffer size mismatches: $mismatches.")
+            }
+
+            // Reported on success too, so a passing run still shows the sizes it observed.
+            println("$name: $details")
+
+            // A slice of exactly one chunk, rather than merely no more than one, is what proves the
+            // cap engaged: the core asks for more than a chunk at once in both directions, so a
+            // full-size slice can only be the result of that being split. An upper bound alone
+            // would also hold if the core stopped making large requests, and would pass while
+            // defending nothing.
+            val success = maxRead == STREAM_CHUNK_BYTES &&
+                maxWrite == STREAM_CHUNK_BYTES &&
+                mismatches == 0 &&
+                manifestJson.isNotEmpty()
+
+            return TestResult(
+                name,
+                success,
+                when {
+                    maxRead > STREAM_CHUNK_BYTES -> "Read request of $maxRead exceeds the chunk cap"
+                    maxRead < STREAM_CHUNK_BYTES -> "No read filled a chunk, so the cap is unproven"
+                    maxWrite > STREAM_CHUNK_BYTES -> "Write request of $maxWrite exceeds the chunk cap"
+                    maxWrite < STREAM_CHUNK_BYTES -> "No write filled a chunk, so the cap is unproven"
+                    mismatches > 0 -> "Callback saw a buffer whose size did not match its count"
+                    manifestJson.isEmpty() -> "Signed asset produced no manifest"
+                    else -> "Stream requests stayed within the chunk cap and the asset verified"
+                },
+                details,
+            )
+        } finally {
+            source.delete()
+            signed.delete()
+        }
+    }
+}
+
+/** Chunk size the JNI bridge caps stream callback requests at, mirroring the native constant. */
+private const val STREAM_CHUNK_BYTES = 1 shl 20
+
+/**
+ * Asset size for the chunking test, large enough to need several chunks per hash range. A larger
+ * asset adds nothing: the core reads at most 16 MiB per call however large the asset is.
+ */
+private const val LARGE_ASSET_BYTES = 16L * 1024 * 1024
+
+/** Largest payload a JPEG APPn segment can carry: the length field covers itself and the payload. */
+private const val FILLER_PAYLOAD_BYTES = 65533
+
+/** Records the size of every request the JNI bridge makes to a stream callback. */
+private class ChunkObserver {
+    var maxReadCount = 0
+        private set
+    var maxWriteCount = 0
+        private set
+    var readCalls = 0
+        private set
+    var writeCalls = 0
+        private set
+
+    /**
+     * Counts callbacks handed a buffer whose length differs from the count they were asked for.
+     * The two have always matched, so a stream implementation that sizes its work from the buffer
+     * rather than the count still behaves correctly.
+     */
+    var bufferSizeMismatches = 0
+        private set
+
+    fun recordRead(count: Int, bufferSize: Int) {
+        readCalls++
+        if (count > maxReadCount) maxReadCount = count
+        if (bufferSize != count) bufferSizeMismatches++
+    }
+
+    fun recordWrite(count: Int, bufferSize: Int) {
+        writeCalls++
+        if (count > maxWriteCount) maxWriteCount = count
+        if (bufferSize != count) bufferSizeMismatches++
+    }
+}
+
+/**
+ * File-backed [CallbackStream] that reports every request it receives to [observer].
+ *
+ * Uses the public callback API rather than [FileStream] so that the test exercises the same path
+ * a third-party stream implementation would.
+ */
+private class RecordingFileStream(target: File, mode: String, private val observer: ChunkObserver) : Closeable {
+
+    private val file = RandomAccessFile(target, mode)
+
+    val stream: CallbackStream = CallbackStream(
+        reader = { buffer, count ->
+            observer.recordRead(count, buffer.size)
+            val read = file.read(buffer, 0, count)
+            if (read == -1) 0 else read
+        },
+        writer = { buffer, count ->
+            observer.recordWrite(count, buffer.size)
+            file.write(buffer, 0, count)
+            count
+        },
+        seeker = { offset, origin ->
+            val target = when (origin) {
+                SeekMode.START -> offset
+                SeekMode.CURRENT -> file.filePointer + offset
+                SeekMode.END -> file.length() + offset
+            }
+            file.seek(target)
+            target
+        },
+        flusher = { 0 },
+    )
+
+    override fun close() {
+        stream.close()
+        file.close()
+    }
+}
+
+/**
+ * Writes [source] to [dest], padded with filler JPEG segments until it reaches at least
+ * [targetBytes].
+ *
+ * Gives the suite a large asset without committing a large fixture or holding one in memory: the
+ * padding is written a segment at a time from a single reused buffer. APP9 carries no meaning to
+ * either a decoder or the C2PA core, so both skip it and the result stays a valid JPEG.
+ */
+private fun writeInflatedJpeg(source: ByteArray, targetBytes: Long, dest: File) {
+    require(source.size > 6 && source[0] == 0xFF.toByte() && source[1] == 0xD8.toByte()) {
+        "Source resource is not a JPEG"
+    }
+
+    // JFIF requires APP0 to come directly after SOI, so the filler is inserted after the source's
+    // first segment rather than ahead of it. An APPn segment carries a two-byte length covering
+    // itself, so where the first one ends is known without parsing any further.
+    val insertAt = if (source[2] == 0xFF.toByte() && (source[3].toInt() and 0xF0) == 0xE0) {
+        4 + (((source[4].toInt() and 0xFF) shl 8) or (source[5].toInt() and 0xFF))
+    } else {
+        2
+    }
+
+    val payload = ByteArray(FILLER_PAYLOAD_BYTES)
+    val segmentLength = FILLER_PAYLOAD_BYTES + 2
+    val header = byteArrayOf(
+        0xFF.toByte(),
+        0xE9.toByte(),
+        ((segmentLength shr 8) and 0xFF).toByte(),
+        (segmentLength and 0xFF).toByte(),
+    )
+    val segmentBytes = header.size + payload.size
+    val padding = (targetBytes - source.size).coerceAtLeast(0L)
+    val segments = (padding + segmentBytes - 1) / segmentBytes
+
+    dest.outputStream().buffered().use { out ->
+        out.write(source, 0, insertAt)
+        repeat(segments.toInt()) {
+            out.write(header)
+            out.write(payload)
+        }
+        out.write(source, insertAt, source.size - insertAt)
     }
 }
