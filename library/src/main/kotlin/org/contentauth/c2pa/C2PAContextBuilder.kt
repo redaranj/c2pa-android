@@ -157,6 +157,12 @@ class C2PAContextBuilder internal constructor(private var ptr: Long) : Closeable
      *
      * The resolver is called synchronously and is retained until the built [C2PAContext] is closed.
      *
+     * A context with a custom resolver cannot sign with a TSA URL. The RFC 3161 time-stamp
+     * request is sent through the resolver, but [HttpResponse] carries no headers, and the core
+     * accepts a time-stamp reply only with `Content-Type: application/timestamp-reply`. Signing
+     * therefore fails with an error naming the missing content type. Sign with a context that has
+     * no custom resolver when the signer has a TSA URL.
+     *
      * @param resolver The resolver
      * @return This builder for fluent chaining
      * @throws C2PAError.Api if the resolver cannot be attached

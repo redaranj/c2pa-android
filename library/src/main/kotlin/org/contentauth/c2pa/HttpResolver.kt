@@ -44,6 +44,9 @@ data class HttpResponse(val status: Int, val body: ByteArray?)
  * Resolves HTTP requests the SDK makes during signing/reading. Called synchronously by the core;
  * implementations should perform the request and return the [HttpResponse], or throw to signal a
  * failure. Configure via [C2PAContextBuilder.setHttpResolver].
+ *
+ * Time-stamp requests reach the resolver too, but a reply returned from it is never accepted,
+ * because [HttpResponse] has no headers. See [C2PAContextBuilder.setHttpResolver].
  */
 fun interface HttpResolver {
     fun resolve(request: HttpRequest): HttpResponse

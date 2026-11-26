@@ -166,6 +166,12 @@ class AndroidBuilderTests : BuilderTests() {
     }
 
     @Test
+    fun runTestContextHttpResolverWithTsaFails() = runBlocking {
+        val result = testContextHttpResolverWithTsaFails()
+        assertTrue(result.success, "Context HTTP Resolver With TSA Fails test failed: ${result.message}")
+    }
+
+    @Test
     fun runTestContextHttpResolverOkHttp() = runBlocking {
         val result = testContextHttpResolverOkHttp()
         assertTrue(result.success, "Context HTTP Resolver (OkHttp) test failed: ${result.message}")
