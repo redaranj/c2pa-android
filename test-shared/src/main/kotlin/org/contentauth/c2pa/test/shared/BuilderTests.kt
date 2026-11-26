@@ -30,6 +30,7 @@ import org.contentauth.c2pa.C2PASettings
 import org.contentauth.c2pa.DigitalSourceType
 import org.contentauth.c2pa.FileStream
 import org.contentauth.c2pa.HashType
+import org.contentauth.c2pa.HttpRequest
 import org.contentauth.c2pa.HttpResponse
 import org.contentauth.c2pa.PredefinedAction
 import org.contentauth.c2pa.ProgressPhase
@@ -1278,6 +1279,80 @@ abstract class BuilderTests : TestBase() {
             } catch (e: C2PAError) {
                 TestResult("Context HTTP Resolver", false, "HTTP resolver flow threw", e.toString())
             }
+        }
+    }
+
+    /**
+     * Pins a known limitation: a context with a custom HTTP resolver cannot sign with a TSA URL.
+     *
+     * The core sends the RFC 3161 request through the context's resolver, but [HttpResponse]
+     * carries no headers and the core accepts a time-stamp reply only with
+     * `Content-Type: application/timestamp-reply`. The resolver here answers with a 200 and is
+     * never asked for a real time-stamp, so the test needs no network. When the core can accept a
+     * reply from a resolver, the sign stops failing this way and this test fails, which is the
+     * signal to revisit the note on [org.contentauth.c2pa.C2PAContextBuilder.setHttpResolver].
+     */
+    suspend fun testContextHttpResolverWithTsaFails(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Context HTTP Resolver With TSA Fails") {
+            val tsaURL = "http://tsa.c2pa-test.invalid/tsr"
+            val certPem = loadResourceAsString("es256_certs")
+            val keyPem = loadResourceAsString("es256_private")
+            val requests = java.util.Collections.synchronizedList(mutableListOf<HttpRequest>())
+
+            val context = C2PAContextBuilder.create()
+                .setHttpResolver { request ->
+                    requests.add(request)
+                    HttpResponse(200, ByteArray(16))
+                }
+                .build()
+
+            val thrown = context.use { ctx ->
+                Builder.fromContext(ctx).withDefinition(TEST_MANIFEST_JSON).use { builder ->
+                    ByteArrayStream(loadResourceAsBytes("pexels_asadphoto_457882")).use { source ->
+                        ByteArrayStream().use { dest ->
+                            Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem, tsaURL)).use { signer ->
+                                try {
+                                    builder.sign("image/jpeg", source, dest, signer)
+                                    null
+                                } catch (e: Exception) {
+                                    e
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val failures = mutableListOf<String>()
+            val tsaRequest = requests.firstOrNull { it.url == tsaURL }
+            if (tsaRequest == null) {
+                failures += "time-stamp request did not reach the resolver"
+            } else {
+                if (tsaRequest.method != "POST") failures += "time-stamp request method: ${tsaRequest.method}"
+                val contentType = tsaRequest.headers.entries
+                    .firstOrNull { it.key.equals("content-type", ignoreCase = true) }
+                    ?.value
+                if (contentType != "application/timestamp-query") {
+                    failures += "time-stamp request content type: $contentType"
+                }
+            }
+            when {
+                thrown == null -> failures += "signed with a resolver and a TSA URL; the limitation may be lifted"
+                thrown !is C2PAError -> failures += "expected C2PAError, got $thrown"
+                thrown.message?.contains("content-type = None") != true ->
+                    failures += "sign failed for another reason: ${thrown.message}"
+            }
+
+            TestResult(
+                "Context HTTP Resolver With TSA Fails",
+                failures.isEmpty(),
+                if (failures.isEmpty()) {
+                    "Time-stamp request reached the resolver, and its reply was rejected for lacking a content type"
+                } else {
+                    "Resolver and TSA behaviour changed: $failures"
+                },
+                "Resolver requests: ${requests.map { "${it.method} ${it.url}" }}, error: ${thrown?.message}",
+            )
         }
     }
 
