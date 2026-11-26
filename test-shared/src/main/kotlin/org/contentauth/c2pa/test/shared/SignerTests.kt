@@ -47,6 +47,7 @@ import java.security.Signature
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicInteger
+import org.json.JSONObject
 
 /** SignerTests - Signing and signer-related tests */
 abstract class SignerTests : TestBase() {
@@ -60,6 +61,97 @@ abstract class SignerTests : TestBase() {
         private const val EMULATOR_SERVER_URL = "http://10.0.2.2:8080"
 
         private fun getServerUrl(): String = System.getenv("SIGNING_SERVER_URL") ?: EMULATOR_SERVER_URL
+
+        // A public RFC 3161 time-stamp authority served over HTTPS.
+        private const val TSA_URL = "https://freetsa.org/tsr"
+
+        // The discard port on loopback: nothing listens there, so the connection is refused at once.
+        private const val UNREACHABLE_TSA_URL = "http://127.0.0.1:9/tsr"
+
+        // CBOR writes the header label as a length byte followed by its UTF-8 bytes, so this
+        // sequence matches both `sigTst` (claim v1) and `sigTst2` (claim v2).
+        private val SIG_TST_LABEL = "sigTst".toByteArray(Charsets.UTF_8)
+    }
+
+    /**
+     * True if the host of [url] answers at the transport level. Any HTTP status counts as
+     * reachable; only a connection failure does not.
+     */
+    private fun isHostReachable(url: String): Boolean = try {
+        val target = URL(url)
+        val connection = URL("${target.protocol}://${target.host}/").openConnection() as HttpURLConnection
+        connection.connectTimeout = 10_000
+        connection.readTimeout = 10_000
+        connection.requestMethod = "HEAD"
+        connection.responseCode
+        connection.disconnect()
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    /**
+     * Every signer path that accepts a TSA URL, each as a function that signs the test image
+     * with [tsaURL] and returns the signed asset.
+     */
+    private fun tsaSigningPaths(tsaURL: String): List<Pair<String, () -> ByteArray>> {
+        val certPem = loadResourceAsString("es256_certs")
+        val keyPem = loadResourceAsString("es256_private")
+        val sourceImageData = loadResourceAsBytes("pexels_asadphoto_457882")
+
+        fun signWith(signer: Signer): ByteArray = Builder.fromJson(TEST_MANIFEST_JSON).use { builder ->
+            signer.use {
+                ByteArrayStream(sourceImageData).use { source ->
+                    ByteArrayStream().use { dest ->
+                        builder.sign("image/jpeg", source, dest, it)
+                        dest.getData()
+                    }
+                }
+            }
+        }
+
+        val settingsJson = JSONObject()
+            .put("version", 1)
+            .put(
+                "signer",
+                JSONObject().put(
+                    "local",
+                    JSONObject()
+                        .put("alg", "es256")
+                        .put("sign_cert", certPem)
+                        .put("private_key", keyPem)
+                        .put("tsa_url", tsaURL),
+                ),
+            )
+            .toString()
+
+        return listOf(
+            "Signer.fromInfo" to {
+                signWith(Signer.fromInfo(SignerInfo(SigningAlgorithm.ES256, certPem, keyPem, tsaURL)))
+            },
+            "Signer.withCallback" to {
+                signWith(
+                    Signer.withCallback(SigningAlgorithm.ES256, certPem, tsaURL) { data ->
+                        SigningHelper.signWithPEMKey(data, keyPem, "ES256")
+                    },
+                )
+            },
+            "settings signer" to {
+                C2PASettings.create().use { settings ->
+                    settings.updateFromString(settingsJson, "json")
+                    C2PAContext.fromSettings(settings).use { context ->
+                        Builder.fromContext(context).withDefinition(TEST_MANIFEST_JSON).use { builder ->
+                            ByteArrayStream(sourceImageData).use { source ->
+                                ByteArrayStream().use { dest ->
+                                    builder.signWithContext("image/jpeg", source, dest)
+                                    dest.getData()
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        )
     }
 
     private suspend fun isSigningServerAvailable(): Boolean = withContext(Dispatchers.IO) {
@@ -869,6 +961,102 @@ abstract class SignerTests : TestBase() {
                 )
             }
         }
+    }
+
+    /**
+     * Tests that every signer path that accepts a TSA URL embeds an RFC 3161 time-stamp token
+     * (`sigTst` or `sigTst2`) in the signature, and that the reader reports the time it carries.
+     * Skips, rather than fails, when the TSA host is unreachable.
+     */
+    suspend fun testTimestampTokenEmbedded(): TestResult = withContext(Dispatchers.IO) {
+        if (!isHostReachable(TSA_URL)) {
+            return@withContext TestResult(
+                "Timestamp Token Embedded",
+                true,
+                "SKIPPED: TSA $TSA_URL unreachable",
+                status = TestStatus.SKIPPED,
+            )
+        }
+
+        runTest("Timestamp Token Embedded") {
+            val failures = mutableListOf<String>()
+            val details = tsaSigningPaths(TSA_URL).map { (path, sign) ->
+                try {
+                    val signed = sign()
+                    val hasToken = signed.indexOf(SIG_TST_LABEL) >= 0
+                    val store = ByteArrayStream(signed).use { stream ->
+                        Reader.fromStream("image/jpeg", stream).use { reader -> JSONObject(reader.json()) }
+                    }
+                    val time = store.getJSONObject("manifests")
+                        .getJSONObject(store.getString("active_manifest"))
+                        .optJSONObject("signature_info")
+                        ?.optString("time")
+                        .orEmpty()
+                    if (!hasToken) failures += "$path: no sigTst in the signature"
+                    if (time.isEmpty()) failures += "$path: no signature_info.time on readback"
+                    "$path: sigTst=$hasToken, time=$time"
+                } catch (e: Exception) {
+                    failures += "$path: signing threw $e"
+                    "$path: threw $e"
+                }
+            }
+
+            TestResult(
+                "Timestamp Token Embedded",
+                failures.isEmpty(),
+                if (failures.isEmpty()) {
+                    "Every TSA signer path embeds a time-stamp token and reports its time"
+                } else {
+                    "Time-stamp missing: $failures"
+                },
+                details.joinToString("; "),
+            )
+        }
+    }
+
+    /**
+     * Tests that a time-stamp request that fails fails the signing call, on every signer path
+     * that accepts a TSA URL, rather than producing a manifest without a time-stamp.
+     */
+    suspend fun testUnreachableTsaFailsSigning(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Unreachable TSA Fails Signing") {
+            val failures = tsaSigningPaths(UNREACHABLE_TSA_URL).mapNotNull { (path, sign) ->
+                val thrown = try {
+                    sign()
+                    null
+                } catch (e: Exception) {
+                    e
+                }
+                when (thrown) {
+                    is C2PAError -> null
+                    null -> "$path: signed without a time-stamp"
+                    else -> "$path: expected C2PAError, got $thrown"
+                }
+            }
+
+            TestResult(
+                "Unreachable TSA Fails Signing",
+                failures.isEmpty(),
+                if (failures.isEmpty()) {
+                    "Every TSA signer path fails the sign when the TSA is unreachable"
+                } else {
+                    "TSA failure not surfaced: $failures"
+                },
+                failures.joinToString("; "),
+            )
+        }
+    }
+
+    /** Returns the index of the first occurrence of [pattern], or -1. */
+    private fun ByteArray.indexOf(pattern: ByteArray): Int {
+        if (pattern.isEmpty() || pattern.size > size) return -1
+        outer@ for (i in 0..size - pattern.size) {
+            for (j in pattern.indices) {
+                if (this[i + j] != pattern[j]) continue@outer
+            }
+            return i
+        }
+        return -1
     }
 
     suspend fun testSignUnsupportedFormat(): TestResult = withContext(Dispatchers.IO) {
