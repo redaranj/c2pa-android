@@ -112,6 +112,23 @@ class AndroidSignerTests : SignerTests() {
     }
 
     @Test
+    fun runTestTimestampTokenEmbedded() = runBlocking {
+        val result = testTimestampTokenEmbedded()
+        // If skipped (TSA unreachable), that's OK
+        if (result.status == TestStatus.SKIPPED) {
+            println("Test skipped: ${result.message}")
+        } else {
+            assertTrue(result.success, "Timestamp Token Embedded test failed: ${result.message}")
+        }
+    }
+
+    @Test
+    fun runTestUnreachableTsaFailsSigning() = runBlocking {
+        val result = testUnreachableTsaFailsSigning()
+        assertTrue(result.success, "Unreachable TSA Fails Signing test failed: ${result.message}")
+    }
+
+    @Test
     fun runTestSignUnsupportedFormat() = runBlocking {
         val result = testSignUnsupportedFormat()
         assertTrue(result.success, "Sign Unsupported Format test failed: ${result.message}")

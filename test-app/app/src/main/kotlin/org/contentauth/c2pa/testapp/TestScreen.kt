@@ -239,6 +239,8 @@ private suspend fun runAllTests(context: Context): List<TestResult> = withContex
     results.add(signerTests.testStrongBoxAvailability())
     results.add(signerTests.testSignUnsupportedFormat())
     results.add(signerTests.testSignWithContextFromSettings())
+    results.add(signerTests.testTimestampTokenEmbedded())
+    results.add(signerTests.testUnreachableTsaFailsSigning())
     results.add(signerTests.testSignWithContextFromJson())
     results.add(signerTests.testSignWithContextWithoutSigner())
     results.add(signerTests.testCawgCombinedPemSigner())
