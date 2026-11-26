@@ -1563,6 +1563,248 @@ abstract class ManifestTests : TestBase() {
     }
 
     /**
+     * Tests the ingredient models against the validation results c2pa-rs generates for a real
+     * signed ingredient, rather than ones the test supplies, and that the decoded ingredient can
+     * be passed back into a new builder and signed again.
+     */
+    suspend fun testSignedIngredientThroughBuilder(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Signed Ingredient Through Builder") {
+            val signerInfo = SignerInfo(
+                SigningAlgorithm.ES256,
+                loadResourceAsString("es256_certs"),
+                loadResourceAsString("es256_private"),
+            )
+            val sourceTitle = "Signed Source"
+
+            fun manifestJson(title: String, ingredients: List<Ingredient> = emptyList()): String =
+                ManifestDefinition(
+                    title = title,
+                    claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "C2PA Android Test", version = "1.0.0")),
+                    assertions = listOf(
+                        AssertionDefinition.actions(
+                            listOf(
+                                ActionAssertion(
+                                    action = PredefinedAction.CREATED,
+                                    digitalSourceType = DigitalSourceType.DIGITAL_CAPTURE,
+                                ),
+                            ),
+                        ),
+                    ),
+                    ingredients = ingredients,
+                ).toJson()
+
+            fun sign(builder: Builder): ByteArray =
+                ByteArrayStream(loadResourceAsBytes("pexels_asadphoto_457882")).use { source ->
+                    ByteArrayStream().use { dest ->
+                        Signer.fromInfo(signerInfo).use { signer ->
+                            builder.sign("image/jpeg", source, dest, signer)
+                        }
+                        dest.getData()
+                    }
+                }
+
+            fun firstIngredientJson(reader: Reader): String {
+                val store = JSONObject(reader.json())
+                return store.getJSONObject("manifests")
+                    .getJSONObject(store.getString("active_manifest"))
+                    .getJSONArray("ingredients")
+                    .getJSONObject(0)
+                    .toString()
+            }
+
+            val source = Builder.fromJson(manifestJson(sourceTitle)).use { sign(it) }
+            val ingredientJson = C2PAJson.default.encodeToString(
+                Ingredient.serializer(),
+                Ingredient(title = sourceTitle, format = "image/jpeg", relationship = Relationship.COMPONENT_OF),
+            )
+            val signed = Builder.fromJson(manifestJson("With Signed Ingredient")).use { builder ->
+                ByteArrayStream(source).use { builder.addIngredient(ingredientJson, "image/jpeg", it) }
+                sign(builder)
+            }
+
+            val failures = mutableListOf<String>()
+            val details = StringBuilder()
+
+            // Decode the ingredient c2pa-rs wrote, and copy out the resources it references so
+            // the decoded ingredient can be handed to a new builder as a complete ingredient.
+            val (read, resources) = ByteArrayStream(signed).use { stream ->
+                Reader.fromStream("image/jpeg", stream).use { reader ->
+                    val json = firstIngredientJson(reader)
+                    details.append(json)
+                    val ingredient = C2PAJson.default.decodeFromString(Ingredient.serializer(), json)
+                    val identifiers = listOfNotNull(ingredient.thumbnail, ingredient.manifestData)
+                        .mapNotNull { it.identifier }
+                    ingredient to identifiers.associateWith { identifier ->
+                        ByteArrayStream().use { out ->
+                            reader.resource(identifier, out)
+                            out.getData()
+                        }
+                    }
+                }
+            }
+
+            val active = read.validationResults?.activeManifest
+            val deltas = read.validationResults?.ingredientDeltas.orEmpty()
+            if (active == null) {
+                failures += "validationResults.activeManifest missing"
+            } else if (active.success.isEmpty()) {
+                failures += "validationResults.activeManifest.success is empty"
+            }
+            // c2pa-rs reports no ingredient deltas for this ingredient, so none is required here.
+            // Any it does report must decode and name an ingredient assertion.
+            deltas.filterNot { it.ingredientAssertionUri.contains("c2pa.ingredient") }.forEach {
+                failures += "ingredientDeltas URI does not name an ingredient assertion: ${it.ingredientAssertionUri}"
+            }
+            val codes = listOfNotNull(active).plus(deltas.map { it.validationDeltas })
+                .flatMap { it.success + it.failure + it.informational }
+            if (codes.isEmpty()) failures += "no validation codes decoded"
+            codes.filter { it.statusCode == null }.forEach { failures += "unlisted status code ${it.code}" }
+
+            // Hand the decoded ingredient, with its resources, to a new builder and sign again.
+            if (failures.isEmpty()) {
+                val resigned = Builder.fromJson(manifestJson("Reused Ingredient", listOf(read))).use { builder ->
+                    resources.forEach { (identifier, bytes) ->
+                        ByteArrayStream(bytes).use { builder.addResource(identifier, it) }
+                    }
+                    sign(builder)
+                }
+                val reused = ByteArrayStream(resigned).use { stream ->
+                    Reader.fromStream("image/jpeg", stream).use { reader ->
+                        C2PAJson.default.decodeFromString(Ingredient.serializer(), firstIngredientJson(reader))
+                    }
+                }
+                if (reused.title != sourceTitle) failures += "reused ingredient title: ${reused.title}"
+                if (reused.relationship != Relationship.COMPONENT_OF) {
+                    failures += "reused ingredient relationship: ${reused.relationship}"
+                }
+                if (reused.validationResults?.activeManifest == null) {
+                    failures += "reused ingredient validationResults.activeManifest missing"
+                }
+            }
+
+            TestResult(
+                "Signed Ingredient Through Builder",
+                failures.isEmpty(),
+                if (failures.isEmpty()) {
+                    "A signed ingredient's validation results decode, and the ingredient signs again"
+                } else {
+                    "Signed ingredient mismatches: $failures"
+                },
+                details.toString(),
+            )
+        }
+    }
+
+    /**
+     * Tests that an actions assertion carrying related actions, a trained algorithmic data source
+     * type and assertion metadata is accepted by the native library and reads back unchanged.
+     */
+    suspend fun testActionsThroughBuilder(): TestResult = withContext(Dispatchers.IO) {
+        runTest("Actions Through Builder") {
+            val related = listOf(
+                ActionAssertion(action = PredefinedAction.CROPPED),
+                ActionAssertion(action = PredefinedAction.RESIZED),
+            )
+            val metadata = Metadata(
+                dataSource = DataSource(type = "signer", details = "C2PA Android Test"),
+                reviewRatings = listOf(
+                    ReviewRating(explanation = "checked", value = 5, code = "actions.possiblyMissing"),
+                ),
+                dateTime = "2026-01-02T03:04:05Z",
+            )
+            val manifest = ManifestDefinition(
+                title = "Actions Through Builder",
+                claimGeneratorInfo = listOf(ClaimGeneratorInfo(name = "C2PA Android Test", version = "1.0.0")),
+                assertions = listOf(
+                    AssertionDefinition.actions(
+                        listOf(
+                            ActionAssertion(
+                                action = PredefinedAction.CREATED,
+                                digitalSourceType = DigitalSourceType.TRAINED_ALGORITHMIC_DATA,
+                            ),
+                            ActionAssertion(action = PredefinedAction.EDITED, related = related),
+                        ),
+                        metadata = metadata,
+                    ),
+                ),
+            )
+            val signerInfo = SignerInfo(
+                SigningAlgorithm.ES256,
+                loadResourceAsString("es256_certs"),
+                loadResourceAsString("es256_private"),
+            )
+
+            val signed = Builder.fromJson(manifest.toJson()).use { builder ->
+                ByteArrayStream(loadResourceAsBytes("pexels_asadphoto_457882")).use { source ->
+                    ByteArrayStream().use { dest ->
+                        Signer.fromInfo(signerInfo).use { signer ->
+                            builder.sign("image/jpeg", source, dest, signer)
+                        }
+                        dest.getData()
+                    }
+                }
+            }
+
+            val store = ByteArrayStream(signed).use { stream ->
+                Reader.fromStream("image/jpeg", stream).use { reader -> JSONObject(reader.json()) }
+            }
+            val assertions = store.getJSONObject("manifests")
+                .getJSONObject(store.getString("active_manifest"))
+                .getJSONArray("assertions")
+            val data = (0 until assertions.length())
+                .map { assertions.getJSONObject(it) }
+                .first { it.getString("label").startsWith("c2pa.actions") }
+                .getJSONObject("data")
+            val actionsJson = data.getJSONArray("actions")
+            val readActions = (0 until actionsJson.length()).map {
+                C2PAJson.default.decodeFromString(ActionAssertion.serializer(), actionsJson.getJSONObject(it).toString())
+            }
+            val readMetadata = data.optJSONObject("metadata")?.let {
+                C2PAJson.default.decodeFromString(Metadata.serializer(), it.toString())
+            }
+
+            val failures = mutableListOf<String>()
+            val created = readActions.firstOrNull { it.action == PredefinedAction.CREATED.value }
+            val edited = readActions.firstOrNull { it.action == PredefinedAction.EDITED.value }
+            if (created?.digitalSourceType != DigitalSourceType.TRAINED_ALGORITHMIC_DATA.toIptcUrl()) {
+                failures += "created digitalSourceType: ${created?.digitalSourceType}"
+            }
+            if (created?.digitalSourceType?.let { DigitalSourceType.fromIptcUrl(it) } !=
+                DigitalSourceType.TRAINED_ALGORITHMIC_DATA
+            ) {
+                failures += "created digitalSourceType does not parse back"
+            }
+            if (edited?.related?.map { it.action } != related.map { it.action }) {
+                failures += "edited related: ${edited?.related}"
+            }
+            if (readMetadata == null) {
+                failures += "metadata missing"
+            } else {
+                if (readMetadata.dataSource != metadata.dataSource) {
+                    failures += "metadata.dataSource: ${readMetadata.dataSource}"
+                }
+                if (readMetadata.reviewRatings != metadata.reviewRatings) {
+                    failures += "metadata.reviewRatings: ${readMetadata.reviewRatings}"
+                }
+                if (readMetadata.dateTime != metadata.dateTime) {
+                    failures += "metadata.dateTime: ${readMetadata.dateTime}"
+                }
+            }
+
+            TestResult(
+                "Actions Through Builder",
+                failures.isEmpty(),
+                if (failures.isEmpty()) {
+                    "Related actions, the trained algorithmic data source type and metadata read back unchanged"
+                } else {
+                    "Actions lost through the native library: $failures"
+                },
+                data.toString(),
+            )
+        }
+    }
+
+    /**
      * Tests all DigitalSourceType values serialize correctly in actions.
      */
     suspend fun testAllDigitalSourceTypes(): TestResult = withContext(Dispatchers.IO) {
