@@ -101,4 +101,19 @@ class AndroidStreamTests : StreamTests() {
         val result = testLargeBufferHandling()
         assertTrue(result.success, "Large Buffer Handling test failed: ${result.message}")
     }
+
+    @Test
+    fun runTestLargeAssetStreamChunking() = runBlocking {
+        val result = testLargeAssetStreamChunking()
+        assertTrue(
+            result.success,
+            "Large Asset Stream Chunking test failed: ${result.message}",
+        )
+    }
+
+    @Test
+    fun runTestOverreportingStreamFails() = runBlocking {
+        val result = testOverreportingStreamFails()
+        assertTrue(result.success, "Overreporting Stream Fails test failed: ${result.message}")
+    }
 }
